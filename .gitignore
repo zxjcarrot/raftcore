@@ -2,3 +2,5 @@
 *.o
 *.dSYM
 .DS_Store
+*.log
+*.map
