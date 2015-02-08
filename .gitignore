@@ -1,0 +1,4 @@
+.tag*
+*.o
+*.dSYM
+.DS_Store

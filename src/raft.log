@@ -1,0 +1,98 @@
+0000001 | 2015-02-07, 15:10:16.588231 [info] - missing rpc_bind_ip, ADDR_ANY is used as default.
+0000002 | 2015-02-07, 15:10:16.589287 [info] - self_id: 192.168.1.105
+0000003 | 2015-02-07, 15:10:16.589313 [info] - skipped self server 192.168.1.105
+0000007 | 2015-02-07, 15:10:16.883569 [info] - election timer timed out, start a new election at term: 34255
+0000011 | 2015-02-07, 15:10:16.884716 [error] - Connection refused
+0000012 | 2015-02-07, 15:10:16.884899 [error] - Connection refused
+0000018 | 2015-02-07, 15:10:17.109192 [info] - election timer timed out, start a new election at term: 34256
+0000022 | 2015-02-07, 15:10:17.109921 [error] - Connection refused
+0000023 | 2015-02-07, 15:10:17.110019 [error] - Connection refused
+0000029 | 2015-02-07, 15:10:17.313511 [info] - election timer timed out, start a new election at term: 34257
+0000033 | 2015-02-07, 15:10:17.314345 [error] - Connection refused
+0000034 | 2015-02-07, 15:10:17.314446 [error] - Connection refused
+0000040 | 2015-02-07, 15:10:17.605479 [info] - election timer timed out, start a new election at term: 34258
+0000044 | 2015-02-07, 15:10:17.606158 [error] - Connection refused
+0000045 | 2015-02-07, 15:10:17.606280 [error] - Connection refused
+0000051 | 2015-02-07, 15:10:17.759834 [info] - election timer timed out, start a new election at term: 34259
+0000055 | 2015-02-07, 15:10:17.761699 [error] - Connection refused
+0000056 | 2015-02-07, 15:10:17.761944 [error] - Connection refused
+0000062 | 2015-02-07, 15:10:17.935204 [info] - election timer timed out, start a new election at term: 34260
+0000066 | 2015-02-07, 15:10:17.935871 [error] - Connection refused
+0000067 | 2015-02-07, 15:10:17.935949 [error] - Connection refused
+0000073 | 2015-02-07, 15:10:18.195818 [info] - election timer timed out, start a new election at term: 34261
+0000077 | 2015-02-07, 15:10:18.196584 [error] - Connection refused
+0000078 | 2015-02-07, 15:10:18.196690 [error] - Connection refused
+0000084 | 2015-02-07, 15:10:18.447289 [info] - election timer timed out, start a new election at term: 34262
+0000088 | 2015-02-07, 15:10:18.448009 [error] - Connection refused
+0000089 | 2015-02-07, 15:10:18.448110 [error] - Connection refused
+0000095 | 2015-02-07, 15:10:18.686555 [info] - election timer timed out, start a new election at term: 34263
+0000099 | 2015-02-07, 15:10:18.687460 [error] - Connection refused
+0000102 | 2015-02-07, 15:10:18.689645 [info] - request_vote[17] at term 34263 got granted from 192.168.66.128
+0000103 | 2015-02-07, 15:10:18.689661 [info] - now i'm the leader[192.168.1.105] at term 34263, sending out heartbeats.
+0000107 | 2015-02-07, 15:10:18.690247 [error] - Connection refused
+0000116 | 2015-02-07, 15:10:18.772106 [error] - Connection refused
+0000123 | 2015-02-07, 15:10:18.852185 [error] - Connection refused
+0000132 | 2015-02-07, 15:10:18.934450 [error] - Connection refused
+0000137 | 2015-02-07, 15:10:19.014666 [error] - Connection refused
+0000144 | 2015-02-07, 15:10:19.095222 [error] - Connection refused
+0000151 | 2015-02-07, 15:10:19.176787 [error] - Connection refused
+0000160 | 2015-02-07, 15:10:19.258401 [error] - Connection refused
+0000165 | 2015-02-07, 15:10:19.339157 [error] - Connection refused
+0000172 | 2015-02-07, 15:10:19.421044 [error] - Connection refused
+0000179 | 2015-02-07, 15:10:19.501613 [error] - Connection refused
+0000186 | 2015-02-07, 15:10:19.583141 [error] - Connection refused
+0000193 | 2015-02-07, 15:10:19.666794 [error] - Connection refused
+0000202 | 2015-02-07, 15:10:19.745933 [error] - Connection refused
+0000207 | 2015-02-07, 15:10:19.825749 [error] - Connection refused
+0000214 | 2015-02-07, 15:10:19.907663 [error] - Connection refused
+0000221 | 2015-02-07, 15:10:19.987932 [error] - Connection refused
+0000228 | 2015-02-07, 15:10:20.069132 [error] - Connection refused
+0000235 | 2015-02-07, 15:10:20.150409 [error] - Connection refused
+0000244 | 2015-02-07, 15:10:20.232299 [error] - Connection refused
+0000249 | 2015-02-07, 15:10:20.312976 [error] - Connection refused
+0000256 | 2015-02-07, 15:10:20.393269 [error] - Connection refused
+0000263 | 2015-02-07, 15:10:20.473823 [error] - Connection refused
+0000272 | 2015-02-07, 15:10:20.554807 [error] - Connection refused
+0000277 | 2015-02-07, 15:10:20.634713 [error] - Connection refused
+0000284 | 2015-02-07, 15:10:20.714752 [error] - Connection refused
+0000291 | 2015-02-07, 15:10:20.796053 [error] - Connection refused
+0000300 | 2015-02-07, 15:10:20.877939 [error] - Connection refused
+0000305 | 2015-02-07, 15:10:20.958286 [error] - Connection refused
+0000312 | 2015-02-07, 15:10:21.039687 [error] - Connection refused
+0000319 | 2015-02-07, 15:10:21.121131 [error] - Connection refused
+0000326 | 2015-02-07, 15:10:21.202489 [error] - Connection refused
+0000335 | 2015-02-07, 15:10:21.284500 [error] - Connection refused
+0000340 | 2015-02-07, 15:10:21.365102 [error] - Connection refused
+0000347 | 2015-02-07, 15:10:21.446643 [error] - Connection refused
+0000354 | 2015-02-07, 15:10:21.527692 [error] - Connection refused
+0000361 | 2015-02-07, 15:10:21.608822 [error] - Connection refused
+0000368 | 2015-02-07, 15:10:21.690020 [error] - Connection refused
+0000375 | 2015-02-07, 15:10:21.771764 [error] - Connection refused
+0000382 | 2015-02-07, 15:10:21.852654 [error] - Connection refused
+0000389 | 2015-02-07, 15:10:21.934267 [error] - Connection refused
+0000398 | 2015-02-07, 15:10:22.015168 [error] - Connection refused
+0000403 | 2015-02-07, 15:10:22.096736 [error] - Connection refused
+0000412 | 2015-02-07, 15:10:22.178342 [error] - Connection refused
+0013084 | 2015-02-07, 15:13:17.024362 [info] - request_vote: a higher term 34395 from 192.168.66.130 exists, stepping down
+0013085 | 2015-02-07, 15:13:17.024434 [info] - stepped down from the leader 192.168.1.105.
+0013089 | 2015-02-07, 15:13:17.024641 [info] - request_vote: requester[192.168.66.130]'s log(10, 34263) is older than this server(13, 34263), rejecting...
+0013095 | 2015-02-07, 15:13:17.212744 [info] - election timer timed out, start a new election at term: 34396
+0013101 | 2015-02-07, 15:13:17.215978 [info] - request_vote[20] at term 34396 got granted from 192.168.66.130
+0013102 | 2015-02-07, 15:13:17.216008 [info] - now i'm the leader[192.168.1.105] at term 34396, sending out heartbeats.
+0013108 | 2015-02-07, 15:13:17.216434 [info] - request_vote[19]: currnet role is not candidate, ignoring stale response...
+0013130 | 2015-02-07, 15:13:17.469647 [info] - request_vote: a higher term 34397 from 192.168.66.130 exists, stepping down
+0013131 | 2015-02-07, 15:13:17.469693 [info] - stepped down from the leader 192.168.1.105.
+0013135 | 2015-02-07, 15:13:17.470553 [info] - request_vote: requester[192.168.66.130]'s log(10, 34263) is older than this server(13, 34263), rejecting...
+0013141 | 2015-02-07, 15:13:17.722514 [info] - election timer timed out, start a new election at term: 34398
+0013147 | 2015-02-07, 15:13:17.725242 [info] - request_vote[22] at term 34398 got granted from 192.168.66.130
+0013148 | 2015-02-07, 15:13:17.725265 [info] - now i'm the leader[192.168.1.105] at term 34398, sending out heartbeats.
+0013154 | 2015-02-07, 15:13:17.726706 [info] - request_vote[21]: currnet role is not candidate, ignoring stale response...
+0013172 | 2015-02-07, 15:13:17.959273 [info] - request_vote: a higher term 34399 from 192.168.66.130 exists, stepping down
+0013173 | 2015-02-07, 15:13:17.959302 [info] - stepped down from the leader 192.168.1.105.
+0013177 | 2015-02-07, 15:13:17.960046 [info] - request_vote: requester[192.168.66.130]'s log(10, 34263) is older than this server(13, 34263), rejecting...
+0013181 | 2015-02-07, 15:13:18.123314 [info] - election timer timed out, start a new election at term: 34400
+0013187 | 2015-02-07, 15:13:18.126237 [info] - request_vote[24] at term 34400 got granted from 192.168.66.130
+0013188 | 2015-02-07, 15:13:18.126268 [info] - now i'm the leader[192.168.1.105] at term 34400, sending out heartbeats.
+0013194 | 2015-02-07, 15:13:18.128086 [info] - request_vote[23]: currnet role is not candidate, ignoring stale response...
+0013210 | 2015-02-07, 15:13:18.319335 [info] - request_vote: a higher term 34401 from 192.168.66.130 exists, stepping down
+0013211 | 2015-02-07, 15:13:18

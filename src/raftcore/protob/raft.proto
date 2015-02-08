@@ -1,0 +1,53 @@
+package raftcore;
+
+message LogEntry {
+    required uint64 term = 1;
+    required uint64 idx = 2;
+    optional string data = 3;
+}
+
+message AppendEntries {
+    required uint64     term = 1;           // leader’s term
+    optional string     leader_id = 2;      // leader's ip sort of stuff, so follower can redirect clients
+    optional uint64     prev_log_idx = 3;   // index of log entry immediately preceding
+    optional uint64     prev_log_term = 4;  // term of prevLogIndex entry
+    repeated LogEntry   entries = 5;        // log entries to store (empty for heartbeat; may send more than one for efficiency)
+    optional uint64     leader_commit = 6;  // leader’s commitIndex
+    optional uint64     id = 7;             // for debugging
+}
+
+message AppendEntriesRes {
+    required uint64 term = 1;
+    required bool   success = 2;
+    /*
+    * server's last log entry index, 
+    * to help leader's next_idx for this
+    * server to converge to correct value quickly
+    */
+    optional uint64 match_idx = 3;      
+    optional uint64 id = 4;             // for debugging
+}
+
+message RequestVote {
+    required uint64 term = 1;           // candidate's term
+    optional string candidate_id = 2;   // candidate's ip sort of stuff
+    optional uint64 last_log_idx = 3;   // index of candidate’s last log entry
+    optional uint64 last_log_term = 4;  // term of candidate’s last log entry
+}
+
+message RequestVoteRes {
+    required uint64 term = 1;           // currentTerm, for candidate to update itself
+    required bool   vote_granted = 2;    // true means candidate received vote
+}
+
+service RaftCoreService {
+    /* 
+    * pre-vote phase to prevent disruptions, we use same parameter 
+    * as request_vote since most of the logic resembles.
+    */
+    rpc pre_vote(RequestVote) returns (RequestVoteRes);
+    rpc request_vote(RequestVote) returns (RequestVoteRes);
+    rpc append_entries(AppendEntries) returns (AppendEntriesRes);
+}
+
+option cc_generic_services = true;
