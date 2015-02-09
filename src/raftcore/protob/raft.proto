@@ -4,6 +4,8 @@ message LogEntry {
     required uint64 term = 1;
     required uint64 idx = 2;
     optional string data = 3;
+    /* denotes if this entry is for configuration */
+    optional bool   config = 4;
 }
 
 message AppendEntries {
@@ -37,7 +39,7 @@ message RequestVote {
 
 message RequestVoteRes {
     required uint64 term = 1;           // currentTerm, for candidate to update itself
-    required bool   vote_granted = 2;    // true means candidate received vote
+    required bool   vote_granted = 2;   // true means candidate received vote
 }
 
 service RaftCoreService {

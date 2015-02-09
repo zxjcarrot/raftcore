@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <raftcore/core_simple_logger.h>
 #include <raftcore/core_define.h>
 #include <raftcore/core_filemap.h>
 
@@ -18,7 +19,7 @@ rc_errno core_filemap::map() {
         return RC_MMAP_ALREADY_MAPPED;
 
     if (filename_.empty() && fd_ < 0) {
-        glogger::l(ERROR, "failied in map: filename is empty and file descriptor not specified.");
+        LOG_ERROR << "failied in map: filename is empty and file descriptor not specified."; 
         return RC_MMAP_INVALID_FILE;
     }
 
@@ -30,7 +31,7 @@ rc_errno core_filemap::map() {
                 fd_ = ::open(filename_.c_str(), RC_MMAP_FILE_FLAGS | O_CREAT, RC_MMAP_FILE_MODE);
 
                 if (fd_ == -1) {
-                    glogger::l_perror(ERROR, errno, "failed to create file \"%s\" ", filename_.c_str());
+                    LOG_ERROR << "failed to create file " << filename_ << "\"" << glogger::strerror_s(errno);
                     return RC_MMAP_INVALID_FILE;
                 }
 
@@ -44,7 +45,7 @@ rc_errno core_filemap::map() {
         #else
             char filepath[1024];
             if (::fcntl(fd_, F_GETPATH, filepath) == -1) {
-                glogger::l_perror(ERROR, errno, "failed to get file path of fd %d ", fd_);
+                LOG_ERROR << "failed to get file path of fd " << fd_ << "\"" << glogger::strerror_s(errno);
                 return RC_MMAP_ERROR;
             }
             filename_ = filepath;
@@ -56,7 +57,7 @@ rc_errno core_filemap::map() {
     if (size_ == RC_MMAP_WHOLE_FILE) {
         struct stat st;
         if (::fstat(fd_, &st) == -1) {
-            glogger::l_perror(ERROR, errno, "failed to fstat() on file \"%s\" ", filename_.c_str());
+            LOG_ERROR << "failed to fstat() on file " << filename_ << "\"" << glogger::strerror_s(errno);
             return RC_MMAP_ERROR;
         }
 
@@ -72,7 +73,7 @@ rc_errno core_filemap::map() {
     addr_ = ::mmap(hint_, size_, prot_, flags_, fd_, off_);
 
     if (addr_ == MAP_FAILED) {
-        glogger::l_perror(ERROR, errno, "failed to mmap()");
+        LOG_ERROR << "failed to mmap() " << glogger::strerror_s(errno);
         return RC_MMAP_ERROR;
     }
 
@@ -92,7 +93,7 @@ rc_errno core_filemap::unmap() {
         return RC_GOOD;
 
     if(::munmap(addr_, size_) == -1) {
-        glogger::l_perror(ERROR, errno, "failed to munmap()");
+        LOG_ERROR << "failed to munmap() " << glogger::strerror_s(errno);
         return RC_MMAP_ERROR;
     }
 
@@ -105,7 +106,7 @@ rc_errno core_filemap::remap(size_t new_size) {
     void* new_addr;
 
     if (!mapped_) {
-        glogger::l(ERROR, "the file is not yet mapped");
+        LOG_ERROR << "the file is not yet mapped";
         return RC_MMAP_NOT_MAPPED;
     }
     
@@ -113,7 +114,7 @@ rc_errno core_filemap::remap(size_t new_size) {
         new_addr = ::mremap(addr_, size_, new_size, MREMAP_MAYMOVE);
 
         if (new_addr == MAP_FAILED) {
-            glogger::l_perror(ERROR, errno, "failed to mremap()");
+            LOG_ERROR << "failed to mremap() " << glogger::strerror_s(errno);
             return RC_MMAP_ERROR;
         }
 
@@ -130,14 +131,14 @@ rc_errno core_filemap::remap(size_t new_size) {
             return r;
 
         if (::ftruncate(fd_, new_size) == -1) {
-            glogger::l_perror(ERROR, errno, "failed to ftruncate()");
+            LOG_ERROR << "failed to ftruncate() " << glogger::strerror_s(errno);
             return RC_MMAP_ERROR;
         }
 
         new_addr = ::mmap(hint_, new_size, prot_, flags_, fd_, off_);
 
         if (new_addr == MAP_FAILED) {
-            glogger::l_perror(ERROR, errno, "failed to mmap()");
+            LOG_ERROR << "failed to mmap() " << glogger::strerror_s(errno);
 
             if (errno == ENOMEM)
                 return RC_OOM;
@@ -160,14 +161,14 @@ rc_errno core_filemap::sync_all() {
 
 rc_errno core_filemap::sync_range(void* addr, size_t len) {
     if (!mapped_) {
-        glogger::l(WARNING, "the file is not yet mapped");
+        LOG_ERROR << "the file is not yet mapped";
         return RC_MMAP_NOT_MAPPED;
     }
     uint64_t left = (uint64_t)addr & (RATCORE_PAGESIZE - 1);
     void * aligned_addr = reinterpret_cast<void*>((uint64_t)addr - left);
     /* msync requires @addr is multiple of hardware page size */
     if (::msync(aligned_addr, len + left, MS_SYNC) == -1){
-        glogger::l_perror(ERROR, errno, "failed to msync()");
+        LOG_ERROR << "failed to msync() " << glogger::strerror_s(errno);
         return RC_MMAP_ERROR;
     }
 
@@ -176,12 +177,12 @@ rc_errno core_filemap::sync_range(void* addr, size_t len) {
 
 rc_errno core_filemap::advise(int advise) {
     if (!mapped_) {
-        glogger::l(WARNING, "the file is not yet mapped");
+        LOG_ERROR << "the file is not yet mapped";
         return RC_MMAP_NOT_MAPPED;
     }
 
     if (::madvise(addr_, size_, advise) == -1) {
-        glogger::l_perror(ERROR, errno, "failed to madvise()");
+        LOG_ERROR << "failed to madvise() " << glogger::strerror_s(errno);
         return RC_MMAP_ERROR;
     }
 

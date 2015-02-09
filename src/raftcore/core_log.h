@@ -22,25 +22,32 @@ const uint64_t log_end_marker = 0;
 
 #define LOG_ENTRY_DATA_LEN(l) ((l)->len - sizeof(struct raftcore::log_entry))
 
+
 struct log_entry {
     uint64_t     len;       /* length of this entry including @len */
     uint64_t     idx;       /* index of this entry */
     uint64_t     term;      /* term to which this entry belongs */
-    char         data[];    /* actual log data */
+    bool         cfg;       /* if this is a configuration entry */
+    /* 
+    * if this is a configuration entry, then the first eight bytes
+    * of @data stores the index of the previous configuration entry,
+    * 0 for the first configuration entry.
+    * Otherwise @data stores plain log data
+    */
+    char         data[];
 };
 
 #define LOG_ENTRY_TO_STRING(e)\
     ("[len: " + std::to_string(e->len) + ", idx: " + std::to_string(e->idx) +\
-   ", term: " + std::to_string(e->term) + \
+   ", term: " + std::to_string(e->term) + ", cfg: " + std::to_string(e->cfg) +\
    ", data: '" + std::string(e->data, LOG_ENTRY_DATA_LEN(e)) + "']")
 
-#define LOG_ENTRY_SENTINEL log_entry{sizeof(struct log_entry), 0, 0}
-
+#define LOG_ENTRY_SENTINEL log_entry{sizeof(struct log_entry), 0, 0, 0}
 
 typedef std::shared_ptr<log_entry> log_entry_sptr;
 
 /* make a log entry holding (@data_len + sizeof(log_entry)) bytes */
-log_entry_sptr make_log_entry(uint64_t data_len);
+log_entry_sptr make_log_entry(uint64_t data_len, bool is_config = false);
 
 #define RAFTCORE_LOGMAP_FILE_PROT   PROT_WRITE | PROT_READ
 #define RAFTCORE_LOGMAP_FILE_FLAGS  MAP_SHARED
@@ -87,6 +94,17 @@ public:
     bool has_log_entry(uint64_t idx, uint64_t term);
     /* check if log entry at @idx has a different term other than @term */
     bool log_entry_conflicted(uint64_t idx, uint64_t term);
+
+    /* return current configuration data */
+    std::string config();
+
+    void copy_log_data(log_entry* entry, const std::string & data, bool if_config = false);
+
+    log_entry* config_entry();
+
+    uint64_t cfg_entry_idx() {
+        return cfg_entry_idx_;
+    }
     
     log_entry* first_entry() {
         return static_cast<log_entry*>((void*)(((char *)log_map_.addr()) + metas_.front().prefix_sum));
@@ -135,6 +153,8 @@ private:
     uint64_t                    size_;
     /* growing factor of log file */
     double                      growing_factor_;
+    /* current configuration entry index, 0 if the log is bootstrapping */
+    uint64_t                    cfg_entry_idx_;
 };
 #define RAFTCORE_LOG_AVAIL_SIZE (size_ - sizeof(log_end_marker) - payload_size_)
 

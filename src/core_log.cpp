@@ -5,21 +5,56 @@
 #include <system_error>
 #include <utility>
 
+#include <raftcore/core_simple_logger.h>
 #include <raftcore/core_define.h>
 #include <raftcore/core_log.h>
 
 namespace raftcore {
 
-log_entry_sptr make_log_entry(uint64_t data_len) {
-    log_entry_sptr les = log_entry_sptr(static_cast<log_entry*>((void*)(new char[data_len + sizeof(log_entry)])));
-    les->len = data_len + sizeof(log_entry);
+log_entry_sptr make_log_entry(uint64_t data_len, bool is_config) {
+    log_entry_sptr les = log_entry_sptr(static_cast<log_entry*>((void*)(new char[(is_config ? sizeof(uint64_t) : 0) + data_len + sizeof(log_entry)])));
+    les->len = (is_config ? sizeof(uint64_t) : 0) + data_len + sizeof(log_entry);
     return les;
+}
+
+/* return current configuration data */
+std::string core_logger::config() {
+    log_entry * entry = config_entry();
+
+    if (entry == nullptr)
+        return std::string("");
+    else                    /* skip first eight bytes */
+        return std::string(entry->data + sizeof(uint64_t), LOG_ENTRY_DATA_LEN(entry) - sizeof(uint64_t));
+}
+
+/* return current configuration data */
+log_entry* core_logger::config_entry() {
+    try {
+        LOG_INFO << "config_entry: cfg_entry_idx_ " << cfg_entry_idx_; 
+        log_entry * entry = operator[](cfg_entry_idx_);
+
+        return entry;
+    } catch (std::out_of_range & oor) {
+        return nullptr;
+    }
+    return nullptr;
+}
+
+void core_logger::copy_log_data(log_entry* entry, const std::string & data, bool if_config) {
+    if (if_config) {
+        uint64_t prev_cfg_idx = HTON64(cfg_entry_idx_);
+        ::memcpy(entry->data, &prev_cfg_idx, sizeof(uint64_t));
+        ::memcpy(entry->data + sizeof(uint64_t), data.c_str(), LOG_ENTRY_DATA_LEN(entry) - sizeof(uint64_t));
+    } else {
+        ::memcpy(entry->data, data.c_str(), LOG_ENTRY_DATA_LEN(entry));
+    }
 }
 
 core_logger::core_logger(std::string logfile, double growing_factor):
     logfile_(logfile), 
     log_map_(logfile, RAFTCORE_LOGMAP_FILE_PROT, RAFTCORE_LOGMAP_FILE_FLAGS,0, RAFTCORE_LOGFILE_DEFAULT_SIZE),
-    growing_factor_(growing_factor) {
+    growing_factor_(growing_factor),
+    cfg_entry_idx_(0) {
 
     if (growing_factor < 1.0)
         throw std::domain_error("growing_factor must be >= 1.0");
@@ -27,7 +62,8 @@ core_logger::core_logger(std::string logfile, double growing_factor):
 
 core_logger::core_logger(int fd, double growing_factor):
     log_map_(fd, RAFTCORE_LOGMAP_FILE_PROT, RAFTCORE_LOGMAP_FILE_FLAGS, 0, RAFTCORE_LOGFILE_DEFAULT_SIZE),
-    growing_factor_(growing_factor) {
+    growing_factor_(growing_factor),
+    cfg_entry_idx_(0) {
 
     if (growing_factor < 1.0)
         throw std::domain_error("growing_factor must be >= 1.0");
@@ -38,7 +74,7 @@ rc_errno core_logger::init() {
     rc_errno rc = log_map_.map();
 
     if (rc == RC_MMAP_NEW_FILE){
-        glogger::l(INFO, "first boot, fill in sentinel log entry");
+        LOG_INFO << "first boot, fill in sentinel log entry";
         log_entry sentinel = LOG_ENTRY_SENTINEL;
         log_entry* pl = static_cast<log_entry*>(log_map_.addr());
         ::memcpy(pl, &sentinel, sentinel.len);
@@ -60,7 +96,13 @@ rc_errno core_logger::init() {
     */
     while (pl->len != log_end_marker) {
         metas_.push_back({pl->idx, payload_size});
+
+        /* choose last configuration entry as current configuration */
+        if (pl->cfg)
+            cfg_entry_idx_ = pl->idx;
+        
         payload_size += pl->len;
+
         pl = static_cast<log_entry*>((void*)((char*)pl + pl->len));
     }
 
@@ -140,6 +182,9 @@ rc_errno core_logger::append(const std::vector<log_entry_sptr> & entries, bool s
 
     /* write entries to mapping region and maintain metadatas at the same time */
     for(log_entry_sptr les : entries) {
+        if (les->cfg)
+            cfg_entry_idx_ = les->idx;
+
         pos += pre->len;
         next = static_cast<log_entry*>((void*)((char *)pre + pre->len));
         
@@ -166,6 +211,14 @@ rc_errno core_logger::append(const std::vector<log_entry_sptr> & entries, bool s
 rc_errno core_logger::chop(uint64_t idx, bool sync) {
     if (metas_.empty() || idx < metas_.front().idx || idx > metas_.back().idx)
         return RC_OOR;
+
+    while (idx <= cfg_entry_idx_) {
+        /* current configuration entry is being chopped off, rollback to previous one */
+        log_entry * cfg_entry = config_entry();
+        uint64_t prev_cfg_idx;
+        ::memcpy(&prev_cfg_idx, cfg_entry->data, sizeof(uint64_t));
+        cfg_entry_idx_ = NTOH64(prev_cfg_idx);
+    }
 
     log_entry_meta & m = metas_[idx - metas_.front().idx];
     log_entry* e = static_cast<log_entry*>((void*)((char*)log_map_.addr() + m.prefix_sum));

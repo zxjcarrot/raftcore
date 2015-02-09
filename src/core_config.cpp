@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <raftcore/core_simple_logger.h>
 #include <raftcore/core_log.h>
 #include <raftcore/core_config.h>
 

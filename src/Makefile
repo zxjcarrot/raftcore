@@ -12,7 +12,7 @@ CC = g++
 #includes
 INCLUDE = -Iraftcore -Iprotob -I.
 #linker params
-LINKPARAMS = -fpic -lprotobuf -lcarrotrpc -lcheetah -lpthread -lboost_system -lboost_log_setup -lboost_log -lboost_thread 
+LINKPARAMS = -fpic -lprotobuf -lcarrotrpc -lpthread -lboost_system -lboost_log_setup -lboost_log -lboost_thread 
 #options for development
 CFLAGS = --std=c++11 -g -O0 -Wall -Werror -fpic -DBOOST_LOG_DYN_LINK
 #options for release

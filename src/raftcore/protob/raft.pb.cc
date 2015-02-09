@@ -47,10 +47,11 @@ void protobuf_AssignDesc_raft_2eproto() {
       "raft.proto");
   GOOGLE_CHECK(file != NULL);
   LogEntry_descriptor_ = file->message_type(0);
-  static const int LogEntry_offsets_[3] = {
+  static const int LogEntry_offsets_[4] = {
     GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(LogEntry, term_),
     GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(LogEntry, idx_),
     GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(LogEntry, data_),
+    GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(LogEntry, config_),
   };
   LogEntry_reflection_ =
     new ::google::protobuf::internal::GeneratedMessageReflection(
@@ -183,24 +184,24 @@ void protobuf_AddDesc_raft_2eproto() {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
 
   ::google::protobuf::DescriptorPool::InternalAddGeneratedFile(
-    "\n\nraft.proto\022\010raftcore\"3\n\010LogEntry\022\014\n\004te"
-    "rm\030\001 \002(\004\022\013\n\003idx\030\002 \002(\004\022\014\n\004data\030\003 \001(\t\"\245\001\n\r"
-    "AppendEntries\022\014\n\004term\030\001 \002(\004\022\021\n\tleader_id"
-    "\030\002 \001(\t\022\024\n\014prev_log_idx\030\003 \001(\004\022\025\n\rprev_log"
-    "_term\030\004 \001(\004\022#\n\007entries\030\005 \003(\0132\022.raftcore."
-    "LogEntry\022\025\n\rleader_commit\030\006 \001(\004\022\n\n\002id\030\007 "
-    "\001(\004\"P\n\020AppendEntriesRes\022\014\n\004term\030\001 \002(\004\022\017\n"
-    "\007success\030\002 \002(\010\022\021\n\tmatch_idx\030\003 \001(\004\022\n\n\002id\030"
-    "\004 \001(\004\"^\n\013RequestVote\022\014\n\004term\030\001 \002(\004\022\024\n\014ca"
-    "ndidate_id\030\002 \001(\t\022\024\n\014last_log_idx\030\003 \001(\004\022\025"
-    "\n\rlast_log_term\030\004 \001(\004\"4\n\016RequestVoteRes\022"
-    "\014\n\004term\030\001 \002(\004\022\024\n\014vote_granted\030\002 \002(\0102\326\001\n\017"
-    "RaftCoreService\022;\n\010pre_vote\022\025.raftcore.R"
-    "equestVote\032\030.raftcore.RequestVoteRes\022\?\n\014"
-    "request_vote\022\025.raftcore.RequestVote\032\030.ra"
-    "ftcore.RequestVoteRes\022E\n\016append_entries\022"
-    "\027.raftcore.AppendEntries\032\032.raftcore.Appe"
-    "ndEntriesResB\003\200\001\001", 697);
+    "\n\nraft.proto\022\010raftcore\"C\n\010LogEntry\022\014\n\004te"
+    "rm\030\001 \002(\004\022\013\n\003idx\030\002 \002(\004\022\014\n\004data\030\003 \001(\t\022\016\n\006c"
+    "onfig\030\004 \001(\010\"\245\001\n\rAppendEntries\022\014\n\004term\030\001 "
+    "\002(\004\022\021\n\tleader_id\030\002 \001(\t\022\024\n\014prev_log_idx\030\003"
+    " \001(\004\022\025\n\rprev_log_term\030\004 \001(\004\022#\n\007entries\030\005"
+    " \003(\0132\022.raftcore.LogEntry\022\025\n\rleader_commi"
+    "t\030\006 \001(\004\022\n\n\002id\030\007 \001(\004\"P\n\020AppendEntriesRes\022"
+    "\014\n\004term\030\001 \002(\004\022\017\n\007success\030\002 \002(\010\022\021\n\tmatch_"
+    "idx\030\003 \001(\004\022\n\n\002id\030\004 \001(\004\"^\n\013RequestVote\022\014\n\004"
+    "term\030\001 \002(\004\022\024\n\014candidate_id\030\002 \001(\t\022\024\n\014last"
+    "_log_idx\030\003 \001(\004\022\025\n\rlast_log_term\030\004 \001(\004\"4\n"
+    "\016RequestVoteRes\022\014\n\004term\030\001 \002(\004\022\024\n\014vote_gr"
+    "anted\030\002 \002(\0102\326\001\n\017RaftCoreService\022;\n\010pre_v"
+    "ote\022\025.raftcore.RequestVote\032\030.raftcore.Re"
+    "questVoteRes\022\?\n\014request_vote\022\025.raftcore."
+    "RequestVote\032\030.raftcore.RequestVoteRes\022E\n"
+    "\016append_entries\022\027.raftcore.AppendEntries"
+    "\032\032.raftcore.AppendEntriesResB\003\200\001\001", 713);
   ::google::protobuf::MessageFactory::InternalRegisterGeneratedFile(
     "raft.proto", &protobuf_RegisterTypes);
   LogEntry::default_instance_ = new LogEntry();
@@ -229,6 +230,7 @@ struct StaticDescriptorInitializer_raft_2eproto {
 const int LogEntry::kTermFieldNumber;
 const int LogEntry::kIdxFieldNumber;
 const int LogEntry::kDataFieldNumber;
+const int LogEntry::kConfigFieldNumber;
 #endif  // !_MSC_VER
 
 LogEntry::LogEntry()
@@ -253,6 +255,7 @@ void LogEntry::SharedCtor() {
   term_ = GOOGLE_ULONGLONG(0);
   idx_ = GOOGLE_ULONGLONG(0);
   data_ = const_cast< ::std::string*>(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  config_ = false;
   ::memset(_has_bits_, 0, sizeof(_has_bits_));
 }
 
@@ -301,13 +304,14 @@ void LogEntry::Clear() {
     ::memset(&first, 0, n);                                \
   } while (0)
 
-  if (_has_bits_[0 / 32] & 7) {
+  if (_has_bits_[0 / 32] & 15) {
     ZR_(term_, idx_);
     if (has_data()) {
       if (data_ != &::google::protobuf::internal::GetEmptyStringAlreadyInited()) {
         data_->clear();
       }
     }
+    config_ = false;
   }
 
 #undef OFFSET_OF_FIELD_
@@ -369,6 +373,21 @@ bool LogEntry::MergePartialFromCodedStream(
         } else {
           goto handle_unusual;
         }
+        if (input->ExpectTag(32)) goto parse_config;
+        break;
+      }
+
+      // optional bool config = 4;
+      case 4: {
+        if (tag == 32) {
+         parse_config:
+          DO_((::google::protobuf::internal::WireFormatLite::ReadPrimitive<
+                   bool, ::google::protobuf::internal::WireFormatLite::TYPE_BOOL>(
+                 input, &config_)));
+          set_has_config();
+        } else {
+          goto handle_unusual;
+        }
         if (input->ExpectAtEnd()) goto success;
         break;
       }
@@ -418,6 +437,11 @@ void LogEntry::SerializeWithCachedSizes(
       3, this->data(), output);
   }
 
+  // optional bool config = 4;
+  if (has_config()) {
+    ::google::protobuf::internal::WireFormatLite::WriteBool(4, this->config(), output);
+  }
+
   if (!unknown_fields().empty()) {
     ::google::protobuf::internal::WireFormat::SerializeUnknownFields(
         unknown_fields(), output);
@@ -447,6 +471,11 @@ void LogEntry::SerializeWithCachedSizes(
     target =
       ::google::protobuf::internal::WireFormatLite::WriteStringToArray(
         3, this->data(), target);
+  }
+
+  // optional bool config = 4;
+  if (has_config()) {
+    target = ::google::protobuf::internal::WireFormatLite::WriteBoolToArray(4, this->config(), target);
   }
 
   if (!unknown_fields().empty()) {
@@ -480,6 +509,11 @@ int LogEntry::ByteSize() const {
       total_size += 1 +
         ::google::protobuf::internal::WireFormatLite::StringSize(
           this->data());
+    }
+
+    // optional bool config = 4;
+    if (has_config()) {
+      total_size += 1 + 1;
     }
 
   }
@@ -518,6 +552,9 @@ void LogEntry::MergeFrom(const LogEntry& from) {
     if (from.has_data()) {
       set_data(from.data());
     }
+    if (from.has_config()) {
+      set_config(from.config());
+    }
   }
   mutable_unknown_fields()->MergeFrom(from.unknown_fields());
 }
@@ -545,6 +582,7 @@ void LogEntry::Swap(LogEntry* other) {
     std::swap(term_, other->term_);
     std::swap(idx_, other->idx_);
     std::swap(data_, other->data_);
+    std::swap(config_, other->config_);
     std::swap(_has_bits_[0], other->_has_bits_[0]);
     _unknown_fields_.Swap(&other->_unknown_fields_);
     std::swap(_cached_size_, other->_cached_size_);

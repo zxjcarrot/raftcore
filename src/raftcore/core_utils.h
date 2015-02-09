@@ -16,6 +16,21 @@ namespace raftcore {
 #define RATCORE_PAGESIZE 4096
 
 #define IFNULL(expr, replacement) ((expr) == nullptr ? (replacement) : (expr)) 
+
+#define REVERSE_BYTE_ORDER64(ll) (((ll) >> 56) |         \
+                    (((ll) & 0x00ff000000000000) >> 40) |\
+                    (((ll) & 0x0000ff0000000000) >> 24) |\
+                    (((ll) & 0x000000ff00000000) >> 8)  |\
+                    (((ll) & 0x00000000ff000000) << 8)  |\
+                    (((ll) & 0x0000000000ff0000) << 24) |\
+                    (((ll) & 0x000000000000ff00) << 40) |\
+                    (((ll) << 56)))
+
+#define HTON64(ll) (little_endian() ? REVERSE_BYTE_ORDER64((ll)) : (ll))
+
+#define NTOH64(ll) (HTON64(ll))
+
+
 /* convenient base class for noncopyable objects */
 class noncopyable {
 public:
@@ -67,7 +82,7 @@ public:
     static void l_perror(severity level, int errno_copy, const std::string fmt, ...);
     static void l_perror(severity level, int errno_copy, const char* fmt, ...);
     static void output_thread();
-private:
+
     static std::string strerror_s(int errno_copy);
     static void output(severity level, const char* fmt, va_list list);
     static thread_safe_queue<log_string_sptr> entries;
@@ -86,5 +101,10 @@ bool is_valid_ipv4_address(std::string str);
 */
 std::string get_if_ipv4_address(std::string ifn);
 
+/* if machine byte order is little endian*/
+bool little_endian();
+
+/* split a string by @delimiter */
+std::vector<std::string> split(const std::string & src, const std::string & delimiter);
 }
 #endif

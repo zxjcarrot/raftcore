@@ -34,5 +34,6 @@ int main(int argc, char const *argv[]){
 
     r->start();
 
+    std::cout << "exitting..." << std::endl;
     return 0;
 }

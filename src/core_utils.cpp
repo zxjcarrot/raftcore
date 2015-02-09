@@ -83,22 +83,22 @@ void glogger::output(severity level, const char* fmt, va_list list) {
         }
         switch(level) {
         case TRACE:
-            LOG(trace) << buffer.get();
+            BOOST_GLOBAL_LOG(trace) << buffer.get();
             break;
         case DEBUG:
-            LOG(debug) << buffer.get();
+            BOOST_GLOBAL_LOG(debug) << buffer.get();
             break;
         case INFO:
-            LOG(info) << buffer.get();
+            BOOST_GLOBAL_LOG(info) << buffer.get();
             break;
         case WARNING:
-            LOG(warning) << buffer.get();
+            BOOST_GLOBAL_LOG(warning) << buffer.get();
             break;
         case ERROR:
-            LOG(error) << buffer.get();
+            BOOST_GLOBAL_LOG(error) << buffer.get();
             break;
         case FATAL:
-            LOG(fatal) << buffer.get();
+            BOOST_GLOBAL_LOG(fatal) << buffer.get();
             break;
         }
         break;
@@ -154,21 +154,45 @@ std::string get_if_ipv4_address(std::string ifn) {
     strcpy(ifr.ifr_name, ifn.c_str());
 
     if (ioctl(sock, SIOCGIFADDR, &ifr) < 0) {
-        glogger::l_perror(ERROR, errno, "faield in ioctl ");
-        
+        LOG_ERROR << "faield in ioctl " << glogger::strerror_s(errno);
         ::close(sock);
 
         return std::string("");
     }
 
     if (inet_ntop(AF_INET, &(((struct sockaddr_in*)&(ifr.ifr_addr))->sin_addr), buf, sizeof(buf)) == NULL) {
-        glogger::l_perror(ERROR, errno, "faield in inet_ntop ");
-        
+        LOG_ERROR << "faield in inet_ntop " << glogger::strerror_s(errno);
         ::close(sock);
 
         return std::string("");   
     }
 
     return std::string(buf);
+}
+
+bool little_endian() {
+    const uint16_t dummy = 0x0001;
+
+    if (*((char*)&dummy))
+        return true;
+    
+    return false;
+}
+
+std::vector<std::string> split(const std::string & src, const std::string & delimiter) {
+    std::vector<std::string> v;
+    size_t pos = 0;
+    size_t found_pos = 0;
+
+    while ((found_pos = src.find_first_of(delimiter, pos)) != std::string::npos){
+        v.emplace_back(std::string(src.begin() + pos, src.begin() + found_pos));
+        pos = found_pos + 1;
+    }
+    if (v.empty()) {
+        v.emplace_back(src);
+    } else {
+        v.emplace_back(std::string(src.begin() + pos, src.end()));
+    }
+    return v;
 }
 }

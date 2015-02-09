@@ -121,6 +121,13 @@ class LogEntry : public ::google::protobuf::Message {
   inline ::std::string* release_data();
   inline void set_allocated_data(::std::string* data);
 
+  // optional bool config = 4;
+  inline bool has_config() const;
+  inline void clear_config();
+  static const int kConfigFieldNumber = 4;
+  inline bool config() const;
+  inline void set_config(bool value);
+
   // @@protoc_insertion_point(class_scope:raftcore.LogEntry)
  private:
   inline void set_has_term();
@@ -129,6 +136,8 @@ class LogEntry : public ::google::protobuf::Message {
   inline void clear_has_idx();
   inline void set_has_data();
   inline void clear_has_data();
+  inline void set_has_config();
+  inline void clear_has_config();
 
   ::google::protobuf::UnknownFieldSet _unknown_fields_;
 
@@ -137,6 +146,7 @@ class LogEntry : public ::google::protobuf::Message {
   ::google::protobuf::uint64 term_;
   ::google::protobuf::uint64 idx_;
   ::std::string* data_;
+  bool config_;
   friend void  protobuf_AddDesc_raft_2eproto();
   friend void protobuf_AssignDesc_raft_2eproto();
   friend void protobuf_ShutdownFile_raft_2eproto();
@@ -807,6 +817,30 @@ inline void LogEntry::set_allocated_data(::std::string* data) {
     data_ = const_cast< ::std::string*>(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
   }
   // @@protoc_insertion_point(field_set_allocated:raftcore.LogEntry.data)
+}
+
+// optional bool config = 4;
+inline bool LogEntry::has_config() const {
+  return (_has_bits_[0] & 0x00000008u) != 0;
+}
+inline void LogEntry::set_has_config() {
+  _has_bits_[0] |= 0x00000008u;
+}
+inline void LogEntry::clear_has_config() {
+  _has_bits_[0] &= ~0x00000008u;
+}
+inline void LogEntry::clear_config() {
+  config_ = false;
+  clear_has_config();
+}
+inline bool LogEntry::config() const {
+  // @@protoc_insertion_point(field_get:raftcore.LogEntry.config)
+  return config_;
+}
+inline void LogEntry::set_config(bool value) {
+  set_has_config();
+  config_ = value;
+  // @@protoc_insertion_point(field_set:raftcore.LogEntry.config)
 }
 
 // -------------------------------------------------------------------

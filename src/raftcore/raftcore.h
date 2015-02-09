@@ -139,9 +139,30 @@ struct raft_server {
     raftcore_service_uptr       append_entries_service;    
 };
 
+
 typedef std::shared_ptr<raft_server>            raft_server_sptr;
 typedef std::map<std::string, raft_server_sptr> raft_server_map;
 typedef thread_safe_queue<raft_server*>     server_queue;
+
+
+/* 
+* struct for a fresh server being added 
+* to the cluster to catch up log with the leader.
+*/
+struct server_catching_up {
+    /* 
+    * @new_server holds value indicates that
+    * there is a new server being added and
+    * is catching up log entries with leader.
+    */
+    raft_server_sptr                  server;
+    /*
+    * number of rounds of replication since adding the server.
+    */
+    uint32_t                          rounds;
+    /* time at which last round of replication is started */
+    high_resolution_clock::time_point last_round;
+};
 
 #define RAFTCORE_MAP_FILE_PROT   PROT_WRITE | PROT_READ
 #define RAFTCORE_MAP_FILE_FLAGS  MAP_SHARED
@@ -155,6 +176,7 @@ typedef thread_safe_queue<raft_server*>     server_queue;
 #define RAFTCORE_DEFAULT_RPC_PORT 5758
 
 typedef std::unique_ptr<core_service_impl> core_service_impl_uptr;
+typedef std::unique_ptr<boost::asio::io_service::work> ios_work_uptr;
 
 /* raft protocol core implementation */
 class raft: public noncopyable {
@@ -162,14 +184,14 @@ public:
     friend class core_service_impl;
 
     raft(std::string cfg_filename, log_committed_callback callback):
-            work_(ios_), log_committed_cb_(callback), cfg_filename_(cfg_filename),
+            work_(new boost::asio::io_service::work(ios_)), log_committed_cb_(callback), cfg_filename_(cfg_filename),
             cfg_(new core_config(cfg_filename)), election_timer_(ios_), heartbeat_timer_(ios_),
             inited_(false), started_(false), cur_role_(FOLLOWER), commit_idx_(0), last_applied_(0),
             pre_vote_id_(0), request_vote_id_(0), append_entries_id_(0)
             {}
 
     raft(const core_config & config, log_committed_callback callback):
-            work_(ios_),log_committed_cb_(callback), cfg_(new core_config(config)),
+            work_(new boost::asio::io_service::work(ios_)), log_committed_cb_(callback), cfg_(new core_config(config)),
             election_timer_(ios_), heartbeat_timer_(ios_),
             inited_(false), started_(false), cur_role_(FOLLOWER), commit_idx_(0), last_applied_(0),
             pre_vote_id_(0), request_vote_id_(0), append_entries_id_(0)
@@ -193,7 +215,25 @@ public:
     log_committed_callback log_committed_cb() { return log_committed_cb_; }
 private:
     raft();
+    /*
+    * use network interface address(@self_id_) to bootstrap the cluster if the log contains no configuration entry, 
+    * after bootstrapping, this cluster contains only this server which is also the leader.
+    * other servers could be added by membership change mechanism.
+    */
+    rc_errno bootstrap_cluster_config();
+    /* serialize currnet servers configuration to a string */
+    std::string serialize_configuration();
 
+    /* create a server struct given an address */
+    raft_server_sptr make_raft_server(std::string address);
+
+    /* add a new server to current configuration and replicate configuration to other servers */
+    rc_errno add_server(std::string address);
+    /* remove a server from current configuration and replicate configuration to other servers */
+    rc_errno remove_server(std::string address);
+    /* adjust current confituration when a new configuration entry is stored on the server */
+    void adjust_configuration();
+    
     /* callback gets called asynchronously after a pre_vote call returned from one server */
     void pre_vote_done(pre_vote_task_sptr task);
     /* 
@@ -263,9 +303,14 @@ private:
     void handle_stat(const http::server::request& req, http::server::reply& rep);
     /* web interface to append data to log */
     void handle_append_log_entry(const http::server::request& req, http::server::reply& rep);
+    /* web interface to add server to currnet cluster */
+    void handle_add_server(const http::server::request& req, http::server::reply& rep);
+    /* web interface to remove server to currnet cluster */
+    void handle_remove_server(const http::server::request& req, http::server::reply& rep);
+
     boost::asio::io_service     ios_;
     /* work keeps ios_ running even if there is no real work to do*/
-    boost::asio::io_service::work work_;
+    ios_work_uptr               work_;
 
     /*
     * For leader: called when a log entry has been replicated over a majority of servers.
@@ -324,6 +369,9 @@ private:
     bool                        started_;
     /* current role of this protocol */
     raft_role                   cur_role_;
+
+    bool                        in_election_;
+
     /* lock for cur_role_*/
     std::mutex                  rmtx_;
     /* index of highest log entry known to be committed (initialized to 0, increases monotonically) */
@@ -347,6 +395,8 @@ private:
     /* map of servers */
     raft_server_map             servers_;
     std::mutex                  servers_mtx_;
+
+    server_catching_up          catch_up_;
 
     /* non-deterministic source of random numbers*/
     std::random_device          rd_;
