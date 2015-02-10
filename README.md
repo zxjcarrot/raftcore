@@ -2,9 +2,10 @@
 a library implements raft consensus protocol core functionalities, intended to be used as a building block for distributed systems.
 ###Features supported
 Leader election.  
-Log replication.  
+Log replication.
+Leadership transfer.   
+Membership changes.   
 ###Features in development
-Membership changes.  
 Log compaction.  
 ###Prerequsites
 [protobuf 2.6.0](https://developers.google.com/protocol-buffers/)  

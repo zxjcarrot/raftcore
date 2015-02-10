@@ -26,7 +26,7 @@ message AppendEntriesRes {
     * to help leader's next_idx for this
     * server to converge to correct value quickly
     */
-    optional uint64 match_idx = 3;      
+    optional uint64 match_idx = 3;
     optional uint64 id = 4;             // for debugging
 }
 
@@ -35,6 +35,7 @@ message RequestVote {
     optional string candidate_id = 2;   // candidate's ip sort of stuff
     optional uint64 last_log_idx = 3;   // index of candidate’s last log entry
     optional uint64 last_log_term = 4;  // term of candidate’s last log entry
+    optional bool   early_vote = 5;     // if leader told this candidate to start an early election
 }
 
 message RequestVoteRes {
@@ -43,6 +44,12 @@ message RequestVoteRes {
 }
 
 service RaftCoreService {
+    /* 
+    * tell server to time out immediately to start a election.
+    * no need of request and response parameters, 
+    * RequestVote and RequestVoteRes are just placeholders. 
+    */
+    rpc timeout_now(RequestVote) returns (RequestVoteRes);
     /* 
     * pre-vote phase to prevent disruptions, we use same parameter 
     * as request_vote since most of the logic resembles.

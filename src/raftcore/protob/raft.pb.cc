@@ -104,11 +104,12 @@ void protobuf_AssignDesc_raft_2eproto() {
       ::google::protobuf::MessageFactory::generated_factory(),
       sizeof(AppendEntriesRes));
   RequestVote_descriptor_ = file->message_type(3);
-  static const int RequestVote_offsets_[4] = {
+  static const int RequestVote_offsets_[5] = {
     GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(RequestVote, term_),
     GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(RequestVote, candidate_id_),
     GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(RequestVote, last_log_idx_),
     GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(RequestVote, last_log_term_),
+    GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(RequestVote, early_vote_),
   };
   RequestVote_reflection_ =
     new ::google::protobuf::internal::GeneratedMessageReflection(
@@ -192,16 +193,18 @@ void protobuf_AddDesc_raft_2eproto() {
     " \003(\0132\022.raftcore.LogEntry\022\025\n\rleader_commi"
     "t\030\006 \001(\004\022\n\n\002id\030\007 \001(\004\"P\n\020AppendEntriesRes\022"
     "\014\n\004term\030\001 \002(\004\022\017\n\007success\030\002 \002(\010\022\021\n\tmatch_"
-    "idx\030\003 \001(\004\022\n\n\002id\030\004 \001(\004\"^\n\013RequestVote\022\014\n\004"
+    "idx\030\003 \001(\004\022\n\n\002id\030\004 \001(\004\"r\n\013RequestVote\022\014\n\004"
     "term\030\001 \002(\004\022\024\n\014candidate_id\030\002 \001(\t\022\024\n\014last"
-    "_log_idx\030\003 \001(\004\022\025\n\rlast_log_term\030\004 \001(\004\"4\n"
-    "\016RequestVoteRes\022\014\n\004term\030\001 \002(\004\022\024\n\014vote_gr"
-    "anted\030\002 \002(\0102\326\001\n\017RaftCoreService\022;\n\010pre_v"
-    "ote\022\025.raftcore.RequestVote\032\030.raftcore.Re"
-    "questVoteRes\022\?\n\014request_vote\022\025.raftcore."
-    "RequestVote\032\030.raftcore.RequestVoteRes\022E\n"
-    "\016append_entries\022\027.raftcore.AppendEntries"
-    "\032\032.raftcore.AppendEntriesResB\003\200\001\001", 713);
+    "_log_idx\030\003 \001(\004\022\025\n\rlast_log_term\030\004 \001(\004\022\022\n"
+    "\nearly_vote\030\005 \001(\010\"4\n\016RequestVoteRes\022\014\n\004t"
+    "erm\030\001 \002(\004\022\024\n\014vote_granted\030\002 \002(\0102\226\002\n\017Raft"
+    "CoreService\022>\n\013timeout_now\022\025.raftcore.Re"
+    "questVote\032\030.raftcore.RequestVoteRes\022;\n\010p"
+    "re_vote\022\025.raftcore.RequestVote\032\030.raftcor"
+    "e.RequestVoteRes\022\?\n\014request_vote\022\025.raftc"
+    "ore.RequestVote\032\030.raftcore.RequestVoteRe"
+    "s\022E\n\016append_entries\022\027.raftcore.AppendEnt"
+    "ries\032\032.raftcore.AppendEntriesResB\003\200\001\001", 797);
   ::google::protobuf::MessageFactory::InternalRegisterGeneratedFile(
     "raft.proto", &protobuf_RegisterTypes);
   LogEntry::default_instance_ = new LogEntry();
@@ -1447,6 +1450,7 @@ const int RequestVote::kTermFieldNumber;
 const int RequestVote::kCandidateIdFieldNumber;
 const int RequestVote::kLastLogIdxFieldNumber;
 const int RequestVote::kLastLogTermFieldNumber;
+const int RequestVote::kEarlyVoteFieldNumber;
 #endif  // !_MSC_VER
 
 RequestVote::RequestVote()
@@ -1472,6 +1476,7 @@ void RequestVote::SharedCtor() {
   candidate_id_ = const_cast< ::std::string*>(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
   last_log_idx_ = GOOGLE_ULONGLONG(0);
   last_log_term_ = GOOGLE_ULONGLONG(0);
+  early_vote_ = false;
   ::memset(_has_bits_, 0, sizeof(_has_bits_));
 }
 
@@ -1520,8 +1525,8 @@ void RequestVote::Clear() {
     ::memset(&first, 0, n);                                \
   } while (0)
 
-  if (_has_bits_[0 / 32] & 15) {
-    ZR_(last_log_idx_, last_log_term_);
+  if (_has_bits_[0 / 32] & 31) {
+    ZR_(last_log_idx_, early_vote_);
     term_ = GOOGLE_ULONGLONG(0);
     if (has_candidate_id()) {
       if (candidate_id_ != &::google::protobuf::internal::GetEmptyStringAlreadyInited()) {
@@ -1604,6 +1609,21 @@ bool RequestVote::MergePartialFromCodedStream(
         } else {
           goto handle_unusual;
         }
+        if (input->ExpectTag(40)) goto parse_early_vote;
+        break;
+      }
+
+      // optional bool early_vote = 5;
+      case 5: {
+        if (tag == 40) {
+         parse_early_vote:
+          DO_((::google::protobuf::internal::WireFormatLite::ReadPrimitive<
+                   bool, ::google::protobuf::internal::WireFormatLite::TYPE_BOOL>(
+                 input, &early_vote_)));
+          set_has_early_vote();
+        } else {
+          goto handle_unusual;
+        }
         if (input->ExpectAtEnd()) goto success;
         break;
       }
@@ -1658,6 +1678,11 @@ void RequestVote::SerializeWithCachedSizes(
     ::google::protobuf::internal::WireFormatLite::WriteUInt64(4, this->last_log_term(), output);
   }
 
+  // optional bool early_vote = 5;
+  if (has_early_vote()) {
+    ::google::protobuf::internal::WireFormatLite::WriteBool(5, this->early_vote(), output);
+  }
+
   if (!unknown_fields().empty()) {
     ::google::protobuf::internal::WireFormat::SerializeUnknownFields(
         unknown_fields(), output);
@@ -1692,6 +1717,11 @@ void RequestVote::SerializeWithCachedSizes(
   // optional uint64 last_log_term = 4;
   if (has_last_log_term()) {
     target = ::google::protobuf::internal::WireFormatLite::WriteUInt64ToArray(4, this->last_log_term(), target);
+  }
+
+  // optional bool early_vote = 5;
+  if (has_early_vote()) {
+    target = ::google::protobuf::internal::WireFormatLite::WriteBoolToArray(5, this->early_vote(), target);
   }
 
   if (!unknown_fields().empty()) {
@@ -1734,6 +1764,11 @@ int RequestVote::ByteSize() const {
           this->last_log_term());
     }
 
+    // optional bool early_vote = 5;
+    if (has_early_vote()) {
+      total_size += 1 + 1;
+    }
+
   }
   if (!unknown_fields().empty()) {
     total_size +=
@@ -1773,6 +1808,9 @@ void RequestVote::MergeFrom(const RequestVote& from) {
     if (from.has_last_log_term()) {
       set_last_log_term(from.last_log_term());
     }
+    if (from.has_early_vote()) {
+      set_early_vote(from.early_vote());
+    }
   }
   mutable_unknown_fields()->MergeFrom(from.unknown_fields());
 }
@@ -1801,6 +1839,7 @@ void RequestVote::Swap(RequestVote* other) {
     std::swap(candidate_id_, other->candidate_id_);
     std::swap(last_log_idx_, other->last_log_idx_);
     std::swap(last_log_term_, other->last_log_term_);
+    std::swap(early_vote_, other->early_vote_);
     std::swap(_has_bits_[0], other->_has_bits_[0]);
     _unknown_fields_.Swap(&other->_unknown_fields_);
     std::swap(_cached_size_, other->_cached_size_);
@@ -2103,6 +2142,14 @@ const ::google::protobuf::ServiceDescriptor* RaftCoreService::GetDescriptor() {
   return RaftCoreService_descriptor_;
 }
 
+void RaftCoreService::timeout_now(::google::protobuf::RpcController* controller,
+                         const ::raftcore::RequestVote*,
+                         ::raftcore::RequestVoteRes*,
+                         ::google::protobuf::Closure* done) {
+  controller->SetFailed("Method timeout_now() not implemented.");
+  done->Run();
+}
+
 void RaftCoreService::pre_vote(::google::protobuf::RpcController* controller,
                          const ::raftcore::RequestVote*,
                          ::raftcore::RequestVoteRes*,
@@ -2135,18 +2182,24 @@ void RaftCoreService::CallMethod(const ::google::protobuf::MethodDescriptor* met
   GOOGLE_DCHECK_EQ(method->service(), RaftCoreService_descriptor_);
   switch(method->index()) {
     case 0:
-      pre_vote(controller,
+      timeout_now(controller,
              ::google::protobuf::down_cast<const ::raftcore::RequestVote*>(request),
              ::google::protobuf::down_cast< ::raftcore::RequestVoteRes*>(response),
              done);
       break;
     case 1:
-      request_vote(controller,
+      pre_vote(controller,
              ::google::protobuf::down_cast<const ::raftcore::RequestVote*>(request),
              ::google::protobuf::down_cast< ::raftcore::RequestVoteRes*>(response),
              done);
       break;
     case 2:
+      request_vote(controller,
+             ::google::protobuf::down_cast<const ::raftcore::RequestVote*>(request),
+             ::google::protobuf::down_cast< ::raftcore::RequestVoteRes*>(response),
+             done);
+      break;
+    case 3:
       append_entries(controller,
              ::google::protobuf::down_cast<const ::raftcore::AppendEntries*>(request),
              ::google::protobuf::down_cast< ::raftcore::AppendEntriesRes*>(response),
@@ -2167,6 +2220,8 @@ const ::google::protobuf::Message& RaftCoreService::GetRequestPrototype(
     case 1:
       return ::raftcore::RequestVote::default_instance();
     case 2:
+      return ::raftcore::RequestVote::default_instance();
+    case 3:
       return ::raftcore::AppendEntries::default_instance();
     default:
       GOOGLE_LOG(FATAL) << "Bad method index; this should never happen.";
@@ -2183,6 +2238,8 @@ const ::google::protobuf::Message& RaftCoreService::GetResponsePrototype(
     case 1:
       return ::raftcore::RequestVoteRes::default_instance();
     case 2:
+      return ::raftcore::RequestVoteRes::default_instance();
+    case 3:
       return ::raftcore::AppendEntriesRes::default_instance();
     default:
       GOOGLE_LOG(FATAL) << "Bad method index; this should never happen.";
@@ -2201,25 +2258,32 @@ RaftCoreService_Stub::~RaftCoreService_Stub() {
   if (owns_channel_) delete channel_;
 }
 
-void RaftCoreService_Stub::pre_vote(::google::protobuf::RpcController* controller,
+void RaftCoreService_Stub::timeout_now(::google::protobuf::RpcController* controller,
                               const ::raftcore::RequestVote* request,
                               ::raftcore::RequestVoteRes* response,
                               ::google::protobuf::Closure* done) {
   channel_->CallMethod(descriptor()->method(0),
                        controller, request, response, done);
 }
-void RaftCoreService_Stub::request_vote(::google::protobuf::RpcController* controller,
+void RaftCoreService_Stub::pre_vote(::google::protobuf::RpcController* controller,
                               const ::raftcore::RequestVote* request,
                               ::raftcore::RequestVoteRes* response,
                               ::google::protobuf::Closure* done) {
   channel_->CallMethod(descriptor()->method(1),
                        controller, request, response, done);
 }
+void RaftCoreService_Stub::request_vote(::google::protobuf::RpcController* controller,
+                              const ::raftcore::RequestVote* request,
+                              ::raftcore::RequestVoteRes* response,
+                              ::google::protobuf::Closure* done) {
+  channel_->CallMethod(descriptor()->method(2),
+                       controller, request, response, done);
+}
 void RaftCoreService_Stub::append_entries(::google::protobuf::RpcController* controller,
                               const ::raftcore::AppendEntries* request,
                               ::raftcore::AppendEntriesRes* response,
                               ::google::protobuf::Closure* done) {
-  channel_->CallMethod(descriptor()->method(2),
+  channel_->CallMethod(descriptor()->method(3),
                        controller, request, response, done);
 }
 

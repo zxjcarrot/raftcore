@@ -498,6 +498,13 @@ class RequestVote : public ::google::protobuf::Message {
   inline ::google::protobuf::uint64 last_log_term() const;
   inline void set_last_log_term(::google::protobuf::uint64 value);
 
+  // optional bool early_vote = 5;
+  inline bool has_early_vote() const;
+  inline void clear_early_vote();
+  static const int kEarlyVoteFieldNumber = 5;
+  inline bool early_vote() const;
+  inline void set_early_vote(bool value);
+
   // @@protoc_insertion_point(class_scope:raftcore.RequestVote)
  private:
   inline void set_has_term();
@@ -508,6 +515,8 @@ class RequestVote : public ::google::protobuf::Message {
   inline void clear_has_last_log_idx();
   inline void set_has_last_log_term();
   inline void clear_has_last_log_term();
+  inline void set_has_early_vote();
+  inline void clear_has_early_vote();
 
   ::google::protobuf::UnknownFieldSet _unknown_fields_;
 
@@ -517,6 +526,7 @@ class RequestVote : public ::google::protobuf::Message {
   ::std::string* candidate_id_;
   ::google::protobuf::uint64 last_log_idx_;
   ::google::protobuf::uint64 last_log_term_;
+  bool early_vote_;
   friend void  protobuf_AddDesc_raft_2eproto();
   friend void protobuf_AssignDesc_raft_2eproto();
   friend void protobuf_ShutdownFile_raft_2eproto();
@@ -628,6 +638,10 @@ class RaftCoreService : public ::google::protobuf::Service {
 
   static const ::google::protobuf::ServiceDescriptor* descriptor();
 
+  virtual void timeout_now(::google::protobuf::RpcController* controller,
+                       const ::raftcore::RequestVote* request,
+                       ::raftcore::RequestVoteRes* response,
+                       ::google::protobuf::Closure* done);
   virtual void pre_vote(::google::protobuf::RpcController* controller,
                        const ::raftcore::RequestVote* request,
                        ::raftcore::RequestVoteRes* response,
@@ -669,6 +683,10 @@ class RaftCoreService_Stub : public RaftCoreService {
 
   // implements RaftCoreService ------------------------------------------
 
+  void timeout_now(::google::protobuf::RpcController* controller,
+                       const ::raftcore::RequestVote* request,
+                       ::raftcore::RequestVoteRes* response,
+                       ::google::protobuf::Closure* done);
   void pre_vote(::google::protobuf::RpcController* controller,
                        const ::raftcore::RequestVote* request,
                        ::raftcore::RequestVoteRes* response,
@@ -1323,6 +1341,30 @@ inline void RequestVote::set_last_log_term(::google::protobuf::uint64 value) {
   set_has_last_log_term();
   last_log_term_ = value;
   // @@protoc_insertion_point(field_set:raftcore.RequestVote.last_log_term)
+}
+
+// optional bool early_vote = 5;
+inline bool RequestVote::has_early_vote() const {
+  return (_has_bits_[0] & 0x00000010u) != 0;
+}
+inline void RequestVote::set_has_early_vote() {
+  _has_bits_[0] |= 0x00000010u;
+}
+inline void RequestVote::clear_has_early_vote() {
+  _has_bits_[0] &= ~0x00000010u;
+}
+inline void RequestVote::clear_early_vote() {
+  early_vote_ = false;
+  clear_has_early_vote();
+}
+inline bool RequestVote::early_vote() const {
+  // @@protoc_insertion_point(field_get:raftcore.RequestVote.early_vote)
+  return early_vote_;
+}
+inline void RequestVote::set_early_vote(bool value) {
+  set_has_early_vote();
+  early_vote_ = value;
+  // @@protoc_insertion_point(field_set:raftcore.RequestVote.early_vote)
 }
 
 // -------------------------------------------------------------------

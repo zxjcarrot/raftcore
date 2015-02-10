@@ -48,7 +48,6 @@ typedef std::unique_ptr<RequestVote>                                request_vote
 typedef std::unique_ptr<RequestVoteRes>                             request_vote_res_uptr;
 typedef std::unique_ptr<AppendEntries>                              append_entries_uptr;
 typedef std::unique_ptr<AppendEntriesRes>                           append_entries_res_uptr;
-
 typedef std::unique_ptr<http::server::server>                       http_server_uptr;
 
 enum raft_role {
@@ -65,6 +64,19 @@ struct raftcore_map {
 struct raft_server;
 
 using namespace std::chrono;
+
+/* struct for timeout_now rpc */
+struct timeout_now_task {
+    uint64_t                        id;
+    raft_server*                    s;
+    RequestVote                     request;
+    RequestVoteRes                  response;
+    carrot::CarrotController        controller;
+    ::google::protobuf::Closure*    done;
+    /* time taken for this call to complete or timed out in microseconds */
+    high_resolution_clock::time_point time_start;
+    high_resolution_clock::time_point time_end;
+};
 
 /* struct for each individual pre_vote rpc */
 struct pre_vote_task {
@@ -105,13 +117,14 @@ struct append_entries_task {
     high_resolution_clock::time_point time_end;
 };
 
-typedef std::shared_ptr<pre_vote_task>          pre_vote_task_sptr;
-typedef std::shared_ptr<request_vote_task>      request_vote_task_sptr;
-typedef std::shared_ptr<append_entries_task>    append_entries_task_sptr;
-typedef std::weak_ptr<request_vote_task>        request_vote_task_wptr;
-typedef std::weak_ptr<append_entries_task>      append_entries_task_wptr;
-typedef thread_safe_queue<append_entries_task_sptr>  append_entries_task_queue_;
-
+typedef std::shared_ptr<timeout_now_task>               timeout_now_task_sptr;
+typedef std::shared_ptr<pre_vote_task>                  pre_vote_task_sptr;
+typedef std::shared_ptr<request_vote_task>              request_vote_task_sptr;
+typedef std::shared_ptr<append_entries_task>            append_entries_task_sptr;
+typedef std::weak_ptr<request_vote_task>                request_vote_task_wptr;
+typedef std::weak_ptr<append_entries_task>              append_entries_task_wptr;
+typedef thread_safe_queue<append_entries_task_sptr>     append_entries_task_queue_;
+typedef std::function<void(append_entries_task_sptr)>   append_entries_done_callback;
 
 struct raft_server {
     /* server's network address sort of stuff */
@@ -136,26 +149,23 @@ struct raft_server {
     raftcore_service_uptr       request_vote_service;
     
     /* service stub for append_entries */
-    raftcore_service_uptr       append_entries_service;    
+    raftcore_service_uptr       append_entries_service;
+
+    /* if leader is transferring leadership to this server */
+    bool                        transfer_leader_to; 
 };
 
 
 typedef std::shared_ptr<raft_server>            raft_server_sptr;
 typedef std::map<std::string, raft_server_sptr> raft_server_map;
-typedef thread_safe_queue<raft_server*>     server_queue;
-
+typedef thread_safe_queue<raft_server*>         server_queue;
 
 /* 
 * struct for a fresh server being added 
 * to the cluster to catch up log with the leader.
 */
 struct server_catching_up {
-    /* 
-    * @new_server holds value indicates that
-    * there is a new server being added and
-    * is catching up log entries with leader.
-    */
-    raft_server_sptr                  server;
+    raft_server_sptr                  s;
     /*
     * number of rounds of replication since adding the server.
     */
@@ -163,6 +173,9 @@ struct server_catching_up {
     /* time at which last round of replication is started */
     high_resolution_clock::time_point last_round;
 };
+
+typedef std::shared_ptr<server_catching_up>  server_catching_up_sptr;
+
 
 #define RAFTCORE_MAP_FILE_PROT   PROT_WRITE | PROT_READ
 #define RAFTCORE_MAP_FILE_FLAGS  MAP_SHARED
@@ -172,7 +185,7 @@ struct server_catching_up {
 #define RAFTCORE_DEFAULT_MAX_ELEC_TIMEOUT 300
 #define RAFTCORE_DEFAULT_ELECTION_RPC_TIMEOUT 70
 #define RAFTCORE_DEFAULT_HEARTBEAT_RPC_TIMEOUT 70
-
+#define RAFTCORE_DEFAULT_SERVER_CATCH_UP_ROUNDS 10
 #define RAFTCORE_DEFAULT_RPC_PORT 5758
 
 typedef std::unique_ptr<core_service_impl> core_service_impl_uptr;
@@ -186,15 +199,19 @@ public:
     raft(std::string cfg_filename, log_committed_callback callback):
             work_(new boost::asio::io_service::work(ios_)), log_committed_cb_(callback), cfg_filename_(cfg_filename),
             cfg_(new core_config(cfg_filename)), election_timer_(ios_), heartbeat_timer_(ios_),
-            inited_(false), started_(false), cur_role_(FOLLOWER), commit_idx_(0), last_applied_(0),
-            pre_vote_id_(0), request_vote_id_(0), append_entries_id_(0)
+            inited_(false), started_(false), cur_role_(FOLLOWER),  
+            server_transfer_leader_to_(nullptr), leader_transfer_timer_(ios_), 
+            commit_idx_(0), last_applied_(0),
+            timeout_now_id_(0), pre_vote_id_(0), request_vote_id_(0), append_entries_id_(0)
             {}
 
     raft(const core_config & config, log_committed_callback callback):
             work_(new boost::asio::io_service::work(ios_)), log_committed_cb_(callback), cfg_(new core_config(config)),
             election_timer_(ios_), heartbeat_timer_(ios_),
-            inited_(false), started_(false), cur_role_(FOLLOWER), commit_idx_(0), last_applied_(0),
-            pre_vote_id_(0), request_vote_id_(0), append_entries_id_(0)
+            inited_(false), started_(false), cur_role_(FOLLOWER),
+            server_transfer_leader_to_(nullptr), leader_transfer_timer_(ios_),
+            commit_idx_(0), last_applied_(0),
+            timeout_now_id_(0), pre_vote_id_(0), request_vote_id_(0), append_entries_id_(0)
             {}
     
     /* initialize raft protocol, configurations, timers and heartbeating */
@@ -227,19 +244,35 @@ private:
     /* create a server struct given an address */
     raft_server_sptr make_raft_server(std::string address);
 
+    void handle_catch_up_server_append_entries();
     /* add a new server to current configuration and replicate configuration to other servers */
     rc_errno add_server(std::string address);
     /* remove a server from current configuration and replicate configuration to other servers */
     rc_errno remove_server(std::string address);
     /* adjust current confituration when a new configuration entry is stored on the server */
     void adjust_configuration();
+        
+    /*
+    * find the server who has the most up-to-datee log,
+    * return @self_id_, if there is only one server in the cluster(which is this server itself).
+    */
+    std::string find_most_up_to_date_server();
     
+    void timeout_now_done(timeout_now_task_sptr task);;
+    void timeout_now(raft_server * s);
+    /* issue a TimeoutNow request to the transferee if its log is up-to-date*/
+    void handle_transfer_leader_to(raft_server * s);
+    /* handle timeout events associated with leadership transfer */
+    void handle_leader_transfer_timeout(raft_server * s, const boost::system::error_code& error);
+    /* transfer leadership to the server with address @address */
+    rc_errno leadership_transfer(std::string address);
+
     /* callback gets called asynchronously after a pre_vote call returned from one server */
     void pre_vote_done(pre_vote_task_sptr task);
     /* 
     * send pre_vote rpc to every server to see if can get a vote,
     */
-    void pre_vote();
+    void pre_vote(bool early_vote = false);
 
     /* 
     * send request_vote rpc to a single server,
@@ -307,7 +340,8 @@ private:
     void handle_add_server(const http::server::request& req, http::server::reply& rep);
     /* web interface to remove server to currnet cluster */
     void handle_remove_server(const http::server::request& req, http::server::reply& rep);
-
+    /* web interface to transfer leadership */
+    void handle_leader_transfer(const http::server::request& req, http::server::reply& rep);
     boost::asio::io_service     ios_;
     /* work keeps ios_ running even if there is no real work to do*/
     ios_work_uptr               work_;
@@ -369,11 +403,14 @@ private:
     bool                        started_;
     /* current role of this protocol */
     raft_role                   cur_role_;
-
-    bool                        in_election_;
-
     /* lock for cur_role_*/
     std::mutex                  rmtx_;
+
+    /* current server that leader is transferring leadership to, null if there is no leadership transfer */ 
+    raft_server*                server_transfer_leader_to_;
+    /* timer for timeout in leadership transfer */
+    boost::asio::deadline_timer leader_transfer_timer_;
+
     /* index of highest log entry known to be committed (initialized to 0, increases monotonically) */
     std::atomic<uint64_t>       commit_idx_;
     /* index of highest log entry applied to state machine (initialized to 0, increases monotonically) */
@@ -388,28 +425,29 @@ private:
 
     /* thread-safe queue for notifying some log entries are committed */
     thread_safe_queue<bool>     commit_queue_;
-    
-    /* self server id */
+
+    /* stuff about the server that is catching up with the leader, null if there is no server being caught up */
+    server_catching_up_sptr     cu_server_;
+    uint32_t                    server_catch_up_rounds_;
+    /* this server id */
     std::string                 self_id_;
 
     /* map of servers */
     raft_server_map             servers_;
     std::mutex                  servers_mtx_;
 
-    server_catching_up          catch_up_;
-
     /* non-deterministic source of random numbers*/
     std::random_device          rd_;
     mt19937_uptr                mt_;
     uniform_int_dist_uptr       dist_;
 
+    uint64_t                    timeout_now_id_;
     uint64_t                    pre_vote_id_;
     uint64_t                    request_vote_id_;
     uint64_t                    append_entries_id_;
 
     std::string                 http_server_port_;
     http_server_uptr            http_server_;
-
 
     /* statistics */
     /* when did the server started */
@@ -425,6 +463,14 @@ class core_service_impl: public RaftCoreService {
 public:
     core_service_impl(raft* r):raft_(r) {}
     ~core_service_impl() {}
+
+    /*
+    * tell the server to time out immediately to start a new election
+    */
+    void timeout_now(::google::protobuf::RpcController* controller,
+                      const ::raftcore::RequestVote*,
+                      ::raftcore::RequestVoteRes*,
+                      ::google::protobuf::Closure* done);
 
     /* pre-vote phase to see if this candidate will get the vote,
     * to prevent disruptions brought by servers rejoined the cluster from network partition.
