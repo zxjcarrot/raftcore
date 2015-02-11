@@ -49,6 +49,10 @@ private:
   /// Perform an asynchronous write operation.
   void do_write();
 
+  void handle_ready_to_go(const boost::system::error_code& error, // Result of operation.
+                          std::size_t bytes_transferred           // Number of bytes written.
+  );
+
   /// Socket for the connection.
   boost::asio::ip::tcp::socket socket_;
 

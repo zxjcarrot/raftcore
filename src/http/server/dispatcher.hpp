@@ -11,7 +11,7 @@ namespace server {
 struct reply;
 struct request;
 
-typedef std::function<void(const request& req, reply& rep)> request_handler;
+typedef std::function<void (const request& req, reply& rep)> request_handler;
 
 class dispatcher
 {

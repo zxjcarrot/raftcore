@@ -10,7 +10,7 @@
 
 #include "reply.hpp"
 #include <string>
-
+#include <boost/bind.hpp>
 namespace http {
 namespace server {
 
@@ -249,6 +249,23 @@ reply reply::stock_reply(reply::status_type status)
   rep.headers[1].name = "Content-Type";
   rep.headers[1].value = "text/html";
   return rep;
+}
+
+void reply::handle_write(const boost::system::error_code& error, // Result of operation.
+                         std::size_t bytes_transferred           // Number of bytes written.
+)
+{
+
+}
+
+void reply::ready() {
+  ready_to_go = true;
+  if (write_side.get() && read_side.get() && write_side->is_open() && read_side->is_open()) {
+    write_side->async_write_some(boost::asio::buffer(&ready_to_go, sizeof(ready_to_go)),
+      boost::bind(&reply::handle_write, this,
+        boost::asio::placeholders::error,
+        boost::asio::placeholders::bytes_transferred));
+  }
 }
 
 } // namespace server

@@ -13,15 +13,22 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 #include <boost/asio.hpp>
 #include "header.hpp"
+
 
 namespace http {
 namespace server {
 
+using namespace boost::asio::local;
+
 /// A reply to be sent to a client.
 struct reply
 {
+  reply()
+    : ready_to_go(true)
+    {}
   /// The status of the reply.
   enum status_type
   {
@@ -49,10 +56,24 @@ struct reply
   /// The content to be sent in the reply.
   std::string content;
 
+  /* if the reply is ready to send to client */
+  bool ready_to_go;
+
+  /* connected pair to signal the content is ready for delivery */
+  std::shared_ptr<stream_protocol::socket> read_side;
+  std::shared_ptr<stream_protocol::socket> write_side;
+
   /// Convert the reply into a vector of buffers. The buffers do not own the
   /// underlying memory blocks, therefore the reply object must remain valid and
   /// not be changed until the write operation has completed.
   std::vector<boost::asio::const_buffer> to_buffers();
+
+  void handle_write(const boost::system::error_code& error, // Result of operation.
+                    std::size_t bytes_transferred           // Number of bytes written.
+  );
+
+  /* tell the connection to deleivery the content */
+  void ready();
 
   /// Get a stock reply.
   static reply stock_reply(status_type status);

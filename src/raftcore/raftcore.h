@@ -160,11 +160,25 @@ typedef std::shared_ptr<raft_server>            raft_server_sptr;
 typedef std::map<std::string, raft_server_sptr> raft_server_map;
 typedef thread_safe_queue<raft_server*>         server_queue;
 
+enum reconfiguration_type {
+    server_addition,
+    server_removal
+};
+
 /* 
 * struct for a fresh server being added 
 * to the cluster to catch up log with the leader.
 */
-struct server_catching_up {
+struct server_reconfiguration {
+    reconfiguration_type type;
+    server_reconfiguration(http::server::reply& rep)
+        :http_reply(rep), entry_added(false)
+        {}
+    std::string                       address;
+    http::server::reply&              http_reply;
+
+    /* if the reconfiguration's added to the log */
+    bool                              entry_added;
     raft_server_sptr                  s;
     /*
     * number of rounds of replication since adding the server.
@@ -174,7 +188,7 @@ struct server_catching_up {
     high_resolution_clock::time_point last_round;
 };
 
-typedef std::shared_ptr<server_catching_up>  server_catching_up_sptr;
+typedef std::shared_ptr<server_reconfiguration>  server_reconfiguration_sptr;
 
 
 #define RAFTCORE_MAP_FILE_PROT   PROT_WRITE | PROT_READ
@@ -240,15 +254,16 @@ private:
     rc_errno bootstrap_cluster_config();
     /* serialize currnet servers configuration to a string */
     std::string serialize_configuration();
-
+    /* complete the reconfiguration and reply to client */
+    void complete_reconfiguration(std::string status);
     /* create a server struct given an address */
     raft_server_sptr make_raft_server(std::string address);
 
     void handle_catch_up_server_append_entries();
     /* add a new server to current configuration and replicate configuration to other servers */
-    rc_errno add_server(std::string address);
+    rc_errno add_server(std::string address, http::server::reply& rep);
     /* remove a server from current configuration and replicate configuration to other servers */
-    rc_errno remove_server(std::string address);
+    rc_errno remove_server(std::string address, http::server::reply& rep);
     /* adjust current confituration when a new configuration entry is stored on the server */
     void adjust_configuration();
         
@@ -310,7 +325,7 @@ private:
     /* 
     * transit role from leader to follower, 
     */
-    void step_down(uint64_t new_term);
+    void step_down(uint64_t new_term, std::string cur_leader);
 
     /* transit role to leader */
     void step_up();
@@ -334,6 +349,8 @@ private:
     void handle_heartbeat_timeout(const boost::system::error_code& error);
     /* generate stats in html */
     void handle_stat(const http::server::request& req, http::server::reply& rep);
+    /* return current server's serialized configurtion string */
+    void handle_list_server(const http::server::request& req, http::server::reply& rep);
     /* web interface to append data to log */
     void handle_append_log_entry(const http::server::request& req, http::server::reply& rep);
     /* web interface to add server to currnet cluster */
@@ -426,8 +443,8 @@ private:
     /* thread-safe queue for notifying some log entries are committed */
     thread_safe_queue<bool>     commit_queue_;
 
-    /* stuff about the server that is catching up with the leader, null if there is no server being caught up */
-    server_catching_up_sptr     cu_server_;
+    /* stuff about the server that is added/removed to/from the cluster, null if currently there is no reconfiguration. */
+    server_reconfiguration_sptr recfg_;
     uint32_t                    server_catch_up_rounds_;
     /* this server id */
     std::string                 self_id_;

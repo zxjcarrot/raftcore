@@ -193,7 +193,8 @@ void raft::leader_election_done(request_vote_task_sptr task) {
         }
     } else if (res->term() > core_map()->cur_term) {
         /* step down if there is a higher term going on*/
-        step_down(res->term());
+        LOG_INFO << "calling step_down from raft::leader_election_done";
+        step_down(res->term(), "");
     }
 }
 
@@ -340,6 +341,10 @@ void raft::append_entries() {
 
         append_entries_single(s.get());
     }
+
+    /* adjust commit index if there is only one server(leader) in the cluster */
+    if (servers_.size() == 1 && servers_.find(self_id_) != servers_.end())
+        adjust_commit_idx();
 }
 
 void raft::append_entries_done(append_entries_task_sptr task) {
@@ -361,7 +366,7 @@ void raft::append_entries_done(append_entries_task_sptr task) {
                   << "]: failed to append_entries to server " << s->id
                   << ", error code: " << ctl->ErrorCode()
                   << ", error text: " << ctl->ErrorText();
-        if (cu_server_.get() && cu_server_->s.get() == s) {
+        if (recfg_.get() && recfg_->s.get() == s && recfg_->type == server_addition) {
             handle_catch_up_server_append_entries();
         }
         return;
@@ -384,12 +389,13 @@ void raft::append_entries_done(append_entries_task_sptr task) {
         if (s->transfer_leader_to) {
             handle_transfer_leader_to(s);
         }
-        if (cu_server_.get() && cu_server_->s.get() == s) {
+        if (recfg_.get() && recfg_->s.get() == s && recfg_->type == server_addition) {
             handle_catch_up_server_append_entries();
         }
     } else if (res->term() > core_map()->cur_term) { /* if we have a higher term */
         /* we've already had a another leader, convert to follower */
-        step_down(res->term());
+        LOG_INFO << "calling step_down from raft::append_entries_done";
+        step_down(res->term(), s->id);
     } else {
         /* failed due to log inconsistency: use log length responded by server and retry */
         s->next_idx = res->match_idx() + 1;
@@ -421,7 +427,7 @@ void raft::remove_heartbeat_timer() {
         LOG_ERROR << "election_timer_.cancel error: " << error.message();
 }
 
-void raft::step_down(uint64_t new_term) {
+void raft::step_down(uint64_t new_term, std::string cur_leader) {
     LOG_INFO << "stepped down at term " << core_map()->cur_term << " to new term " << new_term;
     remove_heartbeat_timer();
 
@@ -438,6 +444,15 @@ void raft::step_down(uint64_t new_term) {
         LOG_INFO << "Leaership successfully transfered to " << server_transfer_leader_to_->id;
         server_transfer_leader_to_->transfer_leader_to = false;
         server_transfer_leader_to_ = nullptr;
+        if (recfg_.get() && recfg_->type == server_removal) {
+            cur_leader_ = cur_leader;
+            complete_reconfiguration("OK");
+            LOG_INFO << "recfg_.reset() step_down, current leader now is " << cur_leader_;
+
+            /* cancel leader transfer timer */
+            boost::system::error_code ec;
+            leader_transfer_timer_.cancel(ec);
+        }
     }
 }
 
@@ -456,6 +471,14 @@ void raft::step_up() {
     append_entries();
 }
 
+void raft::complete_reconfiguration(std::string status) {
+    recfg_->http_reply.status = http::server::reply::ok;
+    recfg_->http_reply.content.append(status + " " + cur_leader_);
+    recfg_->http_reply.headers[0].value = std::to_string(recfg_->http_reply.content.size());
+    recfg_->http_reply.ready();
+    /* empty pointer to handle next reconfiguration */
+    recfg_.reset();
+}
 /* 
 * only leader calls this function.
 * If there exists an N such that N > commitIndex, a majority
@@ -467,6 +490,7 @@ void raft::step_up() {
 void raft::adjust_commit_idx() {
     uint64_t max_match = 0;
     uint64_t min_match = log_->last_entry_idx();
+    uint32_t old_commit = commit_idx_;
 
     /* find out a possible range of commit_idx */
     for (auto it : servers_) {
@@ -502,6 +526,34 @@ void raft::adjust_commit_idx() {
             commit_queue_.push(false);
             break;
         }
+    }
+    /* if there is only one server in the cluster, set commit idx to last log entry's index*/
+    if (servers_.size() == 1 && servers_.find(self_id_) != servers_.end()){
+        commit_idx_ = log_->last_entry_idx();
+    }
+
+
+    if (old_commit < log_->cfg_entry_idx() && 
+        log_->cfg_entry_idx() <= commit_idx_ &&
+        recfg_.get()) {
+        /* a reconfiguration entry is committed, reply to client */
+        assert(recfg_->s.get());
+        switch(recfg_->type) {
+            case server_addition:
+            LOG_INFO << "successfully added the server["
+                     << recfg_->s->id
+                     << "] to the configuration";
+
+            complete_reconfiguration("OK");
+            break;
+            case server_removal:
+            LOG_INFO << "successfully removed the server["
+                     << recfg_->s->id
+                     << "] from the configuration";
+            complete_reconfiguration("OK");
+            break;
+        }
+        LOG_INFO << "recfg_.reset() adjust_commit_idx";
     }
 }
 
@@ -562,53 +614,56 @@ std::string raft::find_most_up_to_date_server() {
 }
 
 void raft::handle_catch_up_server_append_entries() {
-    server_catching_up* cu = cu_server_.get();
-    raft_server_sptr    s = cu->s;
+    assert(recfg_.get() && recfg_->type == server_addition);
+    raft_server_sptr    s = recfg_->s;
     rc_errno            rc;
 
-    if (cu == nullptr) {
-        LOG_INFO << "server " << s->id << " is no longer catching up , ignoring...";
+    if (recfg_.get() == nullptr) {
+        LOG_INFO << "server " << recfg_->s->id << " is no longer catching up , ignoring...";
         return;
     }
 
     high_resolution_clock::time_point now = high_resolution_clock::now();
     
-    uint64_t msecs = duration_cast<milliseconds>(now - cu->last_round).count();
+    uint64_t msecs = duration_cast<milliseconds>(now - recfg_->last_round).count();
 
-    if (cu->rounds < server_catch_up_rounds_ ) {
+    if (recfg_->rounds < server_catch_up_rounds_) {
         /* keep working */
-        cu->rounds++;
-        cu_server_->last_round = high_resolution_clock::now();
-        LOG_INFO << "start round " << cu->rounds << " of replication to server " << s->id;
+        recfg_->rounds++;
+        recfg_->last_round = high_resolution_clock::now();
+        LOG_INFO << "start round " << recfg_->rounds << " of replication to server " << s->id;
         append_entries_single(s.get());
     } else if (msecs < min_election_timeout_ && log_->last_entry_idx() - s->match_idx <= 5) { 
         LOG_INFO << "after " << server_catch_up_rounds_ << " rounds of replication, "
                  << "the new server [" << s->id
                  << "] caught up with leader, deploying the reconfiguration...";
-        /*
-        * add to the configuration only if last round
-        * of replication finished within the minimum
-        * election timeout
-        */
-        servers_.insert(std::make_pair(s->id, s));
-
-        std::string cfg_serialized = serialize_configuration();
-        log_entry_sptr cfg_entry = make_log_entry(cfg_serialized.size(), true);
-        cfg_entry->idx = log_->last_entry_idx() + 1;
-        cfg_entry->term = core_map()->cur_term;
-        cfg_entry->cfg = true;
-        log_->copy_log_data(cfg_entry.get(), cfg_serialized, true);
         
-        if (log_->append(cfg_entry, true) != RC_GOOD) {
-            LOG_ERROR << "append_entries: failed to append configuration entry to log, error code: " << rc;
-            cu_server_.reset();
-            return;
-        }
+        if(!recfg_->entry_added) {
+            /*
+            * add to the configuration only if last round
+            * of replication finished within the minimum
+            * election timeout
+            */
+            servers_.insert(std::make_pair(s->id, s));
 
-        cu_server_.reset();
+            std::string cfg_serialized = serialize_configuration();
+            log_entry_sptr cfg_entry = make_log_entry(cfg_serialized.size(), true);
+            cfg_entry->idx = log_->last_entry_idx() + 1;
+            cfg_entry->term = core_map()->cur_term;
+            cfg_entry->cfg = true;
+            log_->copy_log_data(cfg_entry.get(), cfg_serialized, true);
+            
+            if (log_->append(cfg_entry, true) != RC_GOOD) {
+                LOG_ERROR << "append_entries: failed to append configuration entry to log, error code: " << rc;
+                complete_reconfiguration("ERROR");
+                LOG_INFO << "recfg_.reset() handle_catch_up_server_append_entries 1";
+                return;
+            }
+            recfg_->entry_added = true;
+        }
         /* replicate new configuration entry to the rest of the cluster */
         append_entries();
-    } else if (cu->rounds >= server_catch_up_rounds_) {
+    } else if (recfg_->rounds >= server_catch_up_rounds_) {
         /*
         * after @server_catch_up_rounds_ rounds of replication,
         * the server is still not caught up with the leader,
@@ -618,22 +673,28 @@ void raft::handle_catch_up_server_append_entries() {
                  << "the new server [" << s->id
                  << "] is still " << (int)((1 - (double)s->match_idx / log_->last_entry_idx()) * 100)
                  << "% behind the leader, abort the reconfiguration.";
+        complete_reconfiguration("TIMEOUT");
+        LOG_INFO << "recfg_.reset() handle_catch_up_server_append_entries 2";
     }
 
 }
-rc_errno raft::add_server(std::string address) {
+rc_errno raft::add_server(std::string address, http::server::reply& rep) {
     if (cur_role_ != LEADER) {
         LOG_INFO << "add_new_server: current role is not leader, ignoring...";
+        rep.content.append("NOT_LEADER " + cur_leader_);
         return RC_ERROR;
     } else if (servers_.find(address) != servers_.end()) {
         LOG_INFO << "add_new_server: server " << address << " already in the configuration, ignoring...";
+        rep.content.append("IN_CFG " + cur_leader_);
         return RC_ERROR;
     } else if (!is_valid_ipv4_address(address)) {
         LOG_INFO << "add_new_server: invalid server address " << address << ", ignoring...";
+        rep.content.append("INVALID_SERVER " + cur_leader_);
         return RC_ERROR;
-    } else if (cu_server_.get()) {
-        LOG_INFO << "add_new_server: "<< cu_server_->s->id
-                 << " is being added, only one server could be added to the configuration at any time...";
+    } else if (recfg_.get()) {
+        LOG_INFO << "add_new_server: reconfiguration of server "<< recfg_->s->id
+                 << " is in progress...";
+        rep.content.append("LIMIT " + cur_leader_);
         return RC_ERROR;
     }
 
@@ -641,29 +702,46 @@ rc_errno raft::add_server(std::string address) {
 
     if (s.get() == nullptr) {
         LOG_FATAL << "failed to allocate space for server " << address << ", out of memory";
+        rep.content.append("IN_CFG " + cur_leader_);
         return RC_OOM;
     }
 
-    cu_server_ = server_catching_up_sptr(new server_catching_up);
-    cu_server_->s = s;
-    cu_server_->rounds = 1;
-    cu_server_->last_round = high_resolution_clock::now();
+    recfg_ = server_reconfiguration_sptr(new server_reconfiguration(rep));
+    recfg_->address = address;
+    recfg_->type = server_addition;
+    recfg_->s = s;
+    recfg_->rounds = 1;
+    recfg_->last_round = high_resolution_clock::now();
 
     LOG_INFO << "start catching up phase for server[" << s->id << "].";
+    LOG_INFO << "start round " << recfg_->rounds << " of replication to server " << s->id;
+
+    rep.ready_to_go = false;
+    
     append_entries_single(s.get());
     return RC_GOOD;
 }
 
-rc_errno raft::remove_server(std::string address) {
+rc_errno raft::remove_server(std::string address, http::server::reply& rep) {
     rc_errno rc;
 
     if (cur_role_ != LEADER) {
         LOG_INFO << "remove_server: current role is not leader, ignoring...";
+        rep.content.append("NOT_LEADER " + cur_leader_);
         return RC_ERROR;
     } else if (servers_.find(address) == servers_.end()) {
         LOG_INFO << "remove_server: server " << address << " not in the configuration, ignoring...";
+        rep.content.append("NOT_IN_CFG " + cur_leader_);
         return RC_ERROR;
+    } else if (recfg_.get()) {
+        LOG_INFO << "remove_server: reconfiguration of server "<< recfg_->s->id
+                 << " is in progress...";
+        rep.content.append("LIMIT " + cur_leader_);
+        return RC_ERROR;
+
     }
+
+    raft_server_sptr s = servers_.find(address)->second;
 
     servers_.erase(address);
 
@@ -676,7 +754,8 @@ rc_errno raft::remove_server(std::string address) {
     
     if ((rc = log_->append(cfg_entry, true)) != RC_GOOD) {
         LOG_ERROR << "remove_server: failed to append configuration entry to log, error code: " << rc;
-        return rc;
+        rep.content.append("ERROR " + cur_leader_);
+        return RC_ERROR;
     }
 
     /* remove leader itself from the configuration */
@@ -685,8 +764,23 @@ rc_errno raft::remove_server(std::string address) {
         * pick the best server to transfer leadership to,
         * let the new leader to complete the reconfiguration.
         */
-        return leadership_transfer(find_most_up_to_date_server());   
+        if ((rc = leadership_transfer(find_most_up_to_date_server())) == RC_GOOD) {
+            rep.ready_to_go = false;
+            recfg_ = server_reconfiguration_sptr(new server_reconfiguration(rep));
+            recfg_->address = address;
+            recfg_->type = server_removal;
+            recfg_->s = s;
+            return RC_GOOD;
+        } else {
+            rep.content.append("ERROR " + cur_leader_);
+            return RC_ERROR;
+        }
     } else {
+        rep.ready_to_go = false;
+        recfg_ = server_reconfiguration_sptr(new server_reconfiguration(rep));
+        recfg_->address = address;
+        recfg_->type = server_removal;
+        recfg_->s = s;
         /* replicate new configuration entry to the rest of the cluster */
         append_entries();
         return RC_GOOD;
@@ -744,6 +838,10 @@ void raft::handle_leader_transfer_timeout(raft_server * s, const boost::system::
         LOG_INFO << "failed to transfer leadership to " << s->id << ", timed out.";
         s->transfer_leader_to = false;
         server_transfer_leader_to_ = nullptr;
+        if (recfg_.get() && recfg_->type == server_removal) {
+            complete_reconfiguration("TIMEOUT");
+            LOG_INFO << "recfg_.reset() handle_leader_transfer_timeout";
+        }
     } else if (error.value() != boost::system::errc::operation_canceled){
         LOG_ERROR << "raft::handle_leader_transfer_timeout error: " << error.message();
     } else {
@@ -763,7 +861,7 @@ rc_errno raft::leadership_transfer(std::string address) {
         return RC_ERROR;
     } else if (address == self_id_) {
         LOG_INFO << "leadership_transfer: already leader, ignoring...";
-        return RC_GOOD;
+        return RC_ERROR;
     } else if (servers_.find(address) == servers_.end()) {
         LOG_INFO << "leadership_transfer: target server " << address << " not in the configuration, ignoring...";
         return RC_ERROR;
@@ -793,7 +891,7 @@ void raft::adjust_configuration() {
     std::string new_config = log_->config();
     LOG_INFO << "adjust_configuration: new_config " << new_config;
     std::vector<std::string> addresses = split(new_config, ",");
-    /* addition */
+    /* server_addition */
     for (auto address : addresses) {
         if (servers_.find(address) == servers_.end()) {
             raft_server_sptr s = make_raft_server(address);
@@ -803,7 +901,7 @@ void raft::adjust_configuration() {
             LOG_INFO << "adjust_configuration: added new server " << address << " to configuration.";
         }
     }
-    /* removal */
+    /* server_removal */
     for (auto it = servers_.begin(); it != servers_.end();) {
         std::string address = it->first;
 
@@ -855,6 +953,7 @@ th{font-weight:bold;background:#ccc;}</style>");
                        + "</h3>"));
     rep.content.append(std::string("<h3>commit index: ") + std::to_string(commit_idx_) + "</h2>");
     rep.content.append(std::string("<h3>currnet term: ") + std::to_string(core_map()->cur_term) + "</h2>");
+    rep.content.append(std::string("<h3>servers: ") + serialize_configuration() + "</h3>");
     rep.content.append(std::string("<h3>current leader: <a target='_blank' href='http://" + cur_leader_+ ":" + http_server_port_ + "'>" + cur_leader_ + "</a></h3></div>"));
 
     if (cur_role_ == LEADER) {
@@ -949,74 +1048,80 @@ void raft::handle_append_log_entry(const http::server::request& req, http::serve
 }
 
 void raft::handle_add_server(const http::server::request& req, http::server::reply& rep) {
+    rep.headers.resize(2);
     if (req.method != "GET"){
         LOG_DEBUG << "handle_add-server: request method is not GET: " << req.method;
         rep = http::server::reply::stock_reply(http::server::reply::bad_request);
         return;
     }
-    rep.content.append("<html>");
-    
     if (cur_role_ != LEADER) {
         LOG_DEBUG << "handle_add_server: currnt role is not leader";
-        rep.content.append("<head><script type='text/javascript'>alert('not leader!');window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
+        rep.content.append("NOT_LEADER " + cur_leader_ );
     } else {
         size_t question_mark_pos = req.uri.find_last_of('?');
         if (question_mark_pos == std::string::npos) {
             LOG_DEBUG << "handle_add_server: parameter \'server\' is empty or not found";
-            rep.content.append("<head><script type='text/javascript'>alert('\'server\' not found in the parameter!');window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
+            rep.content.append("EMPTY_SERVER " + cur_leader_);
         } else {
             std::string params = std::string(req.uri.begin() + question_mark_pos + 1, req.uri.end());
             std::string server = find_reuqest_param(params, "server");
             if (server == "") {
                 LOG_DEBUG << "handle_add_server: parameter \'server\' is empty or not found";
-                rep.content.append("<head><script type='text/javascript'>alert('\'server\' is empty or not found in the parameter!');window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
+                rep.content.append("EMPTY_SERVER " + cur_leader_);
             } else {
-                rc_errno rc = add_server(server);
+                rc_errno rc = add_server(server, rep);
                 if (rc != RC_GOOD)
                     LOG_INFO << "handle_add_server: errno " << rc;
-                rep.content.append("<head><script type='text/javascript'>window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
             }
         }
     }
-    rep.content.append("</html>");
-    rep.headers.resize(2);
+    rep.status = http::server::reply::ok;
     rep.headers[0].name = "Content-Length";
     rep.headers[0].value = std::to_string(rep.content.size());
     rep.headers[1].name = "Content-Type";
-    rep.headers[1].value = http::server::mime_types::extension_to_type("htm");
+    rep.headers[1].value = http::server::mime_types::extension_to_type("text/plain");
 }
 
 void raft::handle_remove_server(const http::server::request& req, http::server::reply& rep) {
+    rep.headers.resize(2);
     if (req.method != "GET"){
         LOG_DEBUG << "handle_remove_server: request method is not GET: " << req.method;
         rep = http::server::reply::stock_reply(http::server::reply::bad_request);
         return;
     }
-    rep.content.append("<html>");
     
+
     if (cur_role_ != LEADER) {
         LOG_DEBUG << "handle_remove_server: currnt role is not leader";
-        rep.content.append("<head><script type='text/javascript'>alert('not leader!');window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
+        rep.content.append("NOT_LEADER " + cur_leader_ );
     } else {
         size_t question_mark_pos = req.uri.find_last_of('?');
         if (question_mark_pos == std::string::npos) {
             LOG_DEBUG << "handle_remove_server: parameter \'server\' is empty or not found";
-            rep.content.append("<head><script type='text/javascript'>alert('\'server\' not found in the parameter!');window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
+            rep.content.append("EMPTY_SERVER " + cur_leader_);
         } else {
             std::string params = std::string(req.uri.begin() + question_mark_pos + 1, req.uri.end());
             std::string server = find_reuqest_param(params, "server");
             if (server == "") {
                 LOG_DEBUG << "handle_remove_server: parameter \'server\' is empty or not found";
-                rep.content.append("<head><script type='text/javascript'>alert('\'server\' is empty or not found in the parameter!');window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
+                rep.content.append("EMPTY_SERVER " + cur_leader_);
             } else {
-                rc_errno rc = remove_server(server);
+                rc_errno rc = remove_server(server, rep);
                 if (rc != RC_GOOD)
                     LOG_INFO << "handle_remove_server: errno " << rc;
-                rep.content.append("<head><script type='text/javascript'>window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
-            }
+            } 
         }
     }
-    rep.content.append("</html>");
+    rep.status = http::server::reply::ok;
+    rep.headers[0].name = "Content-Length";
+    rep.headers[0].value = std::to_string(rep.content.size());
+    rep.headers[1].name = "Content-Type";
+    rep.headers[1].value = http::server::mime_types::extension_to_type("text/plain");
+}
+
+void raft::handle_list_server(const http::server::request& req, http::server::reply& rep) {
+    rep.content.append(serialize_configuration());
+    rep.status = http::server::reply::ok;
     rep.headers.resize(2);
     rep.headers[0].name = "Content-Length";
     rep.headers[0].value = std::to_string(rep.content.size());
@@ -1055,6 +1160,7 @@ void raft::handle_leader_transfer(const http::server::request& req, http::server
         }
     }
     rep.content.append("</html>");
+    rep.status = http::server::reply::ok;
     rep.headers.resize(2);
     rep.headers[0].name = "Content-Length";
     rep.headers[0].value = std::to_string(rep.content.size());
@@ -1116,9 +1222,8 @@ rc_errno raft::bootstrap_cluster_config() {
 
     } else {
         LOG_INFO << "conf: no servers line found, started as a non-voting server";
-    }    
+    }
 
-   
     LOG_INFO << "bootstrap_cluster_config: finished bootstrapping.";
     return RC_GOOD;
 }
@@ -1366,6 +1471,7 @@ rc_errno raft::init() {
 
     http_server_->register_handler("/", std::bind(&raft::handle_stat, this, std::placeholders::_1, std::placeholders::_2));
     http_server_->register_handler("/stat", std::bind(&raft::handle_stat, this, std::placeholders::_1, std::placeholders::_2));
+    http_server_->register_handler("/list_server", std::bind(&raft::handle_list_server, this, std::placeholders::_1, std::placeholders::_2));
     http_server_->register_handler("/append_log_entry", std::bind(&raft::handle_append_log_entry, this, std::placeholders::_1, std::placeholders::_2));
     http_server_->register_handler("/add_server", std::bind(&raft::handle_add_server, this, std::placeholders::_1, std::placeholders::_2));
     http_server_->register_handler("/remove_server", std::bind(&raft::handle_remove_server, this, std::placeholders::_1, std::placeholders::_2));
@@ -1505,7 +1611,8 @@ void core_service_impl::request_vote(::google::protobuf::RpcController* ctl,
                  << " from " << req->candidate_id()
                  << " exists, stepping down";
         raft_->core_map()->voted_for[0] = 0;
-        raft_->step_down(req->term());
+        LOG_INFO << "calling step_down from core_service_impl::request_vote 1";
+        raft_->step_down(req->term(), "");
     }
     /* reject vote if one of the following is true:
      * 1. term < cur_term
@@ -1534,7 +1641,8 @@ void core_service_impl::request_vote(::google::protobuf::RpcController* ctl,
         /* step down if this is a higher term */
         if (req->term() > raft_->core_map()->cur_term) {
             strncpy(raft_->core_map()->voted_for, req->candidate_id().c_str(), sizeof(raft_->core_map()->voted_for));
-            raft_->step_down(req->term());
+            LOG_INFO << "calling step_down from core_service_impl::request_vote 2";
+            raft_->step_down(req->term(), "");
         }/* save the sync if already voted for this candidate */
         else if (req->candidate_id() != std::string(raft_->core_map()->voted_for)) {
             raft_->core_map()->cur_term = req->term();
@@ -1579,7 +1687,8 @@ void core_service_impl::append_entries(::google::protobuf::RpcController* ctl,
                  << " begins, resetting election timer event...";
         /* set voted_for to null if a new term begins  */
         raft_->core_map()->voted_for[0] = 0;
-        raft_->step_down(req->term());
+        LOG_INFO << "calling step_down from core_service_impl::append_entries";
+        raft_->step_down(req->term(), req->leader_id());
     } else {
         /* append entries rpc from current leader, reset election timer */
         LOG_DEBUG << "append_entries: rpc from current leader, resetting election timer event...";
