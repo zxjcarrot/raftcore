@@ -14,7 +14,8 @@
 #include <netinet/in.h>
 
 enum rc_errno{
-    RC_UNKNOWN_HOST = -10,
+    RC_NOT_LEADER = -11,
+    RC_UNKNOWN_HOST,
     RC_CONF_ERROR,
     RC_MMAP_NEW_FILE,
     RC_MMAP_NOT_MAPPED,

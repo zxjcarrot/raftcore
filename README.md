@@ -2,7 +2,7 @@
 a library implements raft consensus protocol core functionalities, intended to be used as a building block for distributed systems.
 ###Features supported
 Leader election.  
-Log replication.
+Log replication.  
 Leadership transfer.   
 Membership changes.   
 ###Features in development
@@ -37,6 +37,9 @@ If we want to remove one of the server out of the cluster, say server B, run fol
     ```./reconfigure.py --leader_address=192.168.1.1 --del_servers=192.168.1.2```  
 This will remove the server B out of the cluster safely.  
 
-If for some reason, we want to transfer the leadership to another server in the cluster, say transfer current leader A's leadership to server B, we run following:  
+If for some reason, we want to transfer the leadership to other server in the cluster, say transfer current leader A's leadership to server B, we run following:  
     ```./reconfigure.py --leader_address=192.168.1.1 --target_server=192.168.1.2```  
 This will make leader A transfer its leadership to server B stably, A will become a follower once the transfer is complete.  
+
+##Examples  
+A trivial key-value replicated store can be easily implemented on top of **raftcore**, see [carrot-kv](https://github.com/zxjcarrot/raftcore/tree/master/examples/carrot-kv).

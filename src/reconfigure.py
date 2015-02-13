@@ -65,9 +65,10 @@ for a in add_servers:
                 print "succeed"
             else:
                 print "failed to add server {0}: {1} current leader: {2}".format(a, status, leader_hint)
-            if (leader_hint != leader_address):
-                print "leader changed to {0}, retry...".format(leader_hint)
-                leader_address = leader_hint
+            cur_leader = leader_hint.split(":")[0]
+            if (cur_leader != leader_address):
+                print "leader changed to {0}, retry...".format(cur_leader)
+                leader_address = cur_leader
             else:
                 break
         except Exception as e:
@@ -86,11 +87,12 @@ for a in del_servers:
                 print "succeed"
             else:
                 print "failed to remove server {0}: {1} current leader: {2}".format(a, status, leader_hint)
-            if (leader_hint != leader_address):
-                print "leader changed to {0}".format(leader_hint)
-                leader_address = leader_hint
+            cur_leader = leader_hint.split(":")[0]
+            if (cur_leader != leader_address):
+                print "leader changed to {0}, retry...".format(cur_leader)
+                leader_address = cur_leader
             else:
-                break;
+                break
         except Exception as e:
             print "error requesting leader {0}: {1}".format(leader_address, e)
             break

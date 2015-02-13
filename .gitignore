@@ -5,3 +5,6 @@
 *.log
 *.map
 raftc
+log_reader
+carrot-kv
+*.so

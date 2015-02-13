@@ -23,8 +23,7 @@
 #include <raftcore/core_config.h>
 #include <raftcore/core_queue.h>
 #include <raftcore/protob/raft.pb.h>
-
-#include <http/server/server.hpp>
+#include <raftcore/http/server/server.hpp>
 
 namespace raftcore {
 
@@ -127,9 +126,14 @@ typedef thread_safe_queue<append_entries_task_sptr>     append_entries_task_queu
 typedef std::function<void(append_entries_task_sptr)>   append_entries_done_callback;
 
 struct raft_server {
-    /* server's network address sort of stuff */
+    /* server's id */
     char id[32];
 
+    /* server's network address sort of stuff */
+    std::string address;
+
+    /* server's rpc port */
+    std::string port;
     /* if this server is up */
     bool alive;
 
@@ -200,7 +204,7 @@ typedef std::shared_ptr<server_reconfiguration>  server_reconfiguration_sptr;
 #define RAFTCORE_DEFAULT_ELECTION_RPC_TIMEOUT 70
 #define RAFTCORE_DEFAULT_HEARTBEAT_RPC_TIMEOUT 70
 #define RAFTCORE_DEFAULT_SERVER_CATCH_UP_ROUNDS 10
-#define RAFTCORE_DEFAULT_RPC_PORT 5758
+#define RAFTCORE_DEFAULT_RPC_PORT "44497" // the 27th Mersenne prime number :)
 
 typedef std::unique_ptr<core_service_impl> core_service_impl_uptr;
 typedef std::unique_ptr<boost::asio::io_service::work> ios_work_uptr;
@@ -238,12 +242,16 @@ public:
 
     /*
     *  append a log entry to local storage and replicate over a majority of servers.
+    *  return the index of the entry appended if successful, otherwise 0.
     */
-    rc_errno append_log_entry(const std::string & data);
+    uint64_t append_log_entry(const std::string & data);
 
     void log_committed_cb(const log_committed_callback & cb) { log_committed_cb_ = cb; }
 
     log_committed_callback log_committed_cb() { return log_committed_cb_; }
+
+    raft_role current_role() { return cur_role_; }
+    std::string current_leader() { return cur_leader_; }
 private:
     raft();
     /*
@@ -256,8 +264,10 @@ private:
     std::string serialize_configuration();
     /* complete the reconfiguration and reply to client */
     void complete_reconfiguration(std::string status);
-    /* create a server struct given an address */
-    raft_server_sptr make_raft_server(std::string address);
+    /* adjust the address to a valid server id */
+    void make_server_id(std::string & address);
+    /* create a server struct given an address, if the port part is missing in the address, use @default_port instead. */
+    raft_server_sptr make_raft_server(const std::string & address, const std::string & default_port);
 
     void handle_catch_up_server_append_entries();
     /* add a new server to current configuration and replicate configuration to other servers */
@@ -385,7 +395,7 @@ private:
     /* rpc server */
     async_rpc_server_uptr       rpc_server_;
     std::string                 rpc_bind_ip_;
-    uint32_t                    rpc_port_;
+    std::string                 rpc_port_;
 
     /* rpc service */
     core_service_impl_uptr      rpc_service_;
@@ -442,13 +452,15 @@ private:
 
     /* thread-safe queue for notifying some log entries are committed */
     thread_safe_queue<bool>     commit_queue_;
-
+    std::thread                 commit_thread_;
+    
     /* stuff about the server that is added/removed to/from the cluster, null if currently there is no reconfiguration. */
     server_reconfiguration_sptr recfg_;
     uint32_t                    server_catch_up_rounds_;
     /* this server id */
     std::string                 self_id_;
-
+    /* the address of network interface used by raftcore */
+    std::string                 interface_address_;
     /* map of servers */
     raft_server_map             servers_;
     std::mutex                  servers_mtx_;

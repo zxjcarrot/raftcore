@@ -18,6 +18,22 @@ namespace raftcore {
     LOG_DEBUG << "time taken for " << expr << ": " << time_span.count();\
 }
 
+uint64_t raft::append_log_entry(const std::string & data) {
+    if (cur_role_ != LEADER)
+        return RC_NOT_LEADER;
+
+    log_entry_sptr new_entry = make_log_entry(data.size());
+
+    new_entry->idx = log_->last_entry_idx() + 1;
+    new_entry->term = core_map()->cur_term;
+    new_entry->cfg = false;
+    log_->copy_log_data(new_entry.get(), data);
+
+    if(log_->append(new_entry, true) != RC_GOOD)
+        return 0;
+    return new_entry->idx;
+}
+
 void raft::pre_vote_done(pre_vote_task_sptr task) {
     static int counter = 0;
     carrot::CarrotController * ctl = &task->controller;
@@ -91,8 +107,8 @@ void raft::pre_vote(bool early_vote) {
 
         task->s = s;
         task->id = ++pre_vote_id_;
-        task->controller.host(s->id);
-        task->controller.service(std::to_string(rpc_port_));
+        task->controller.host(s->address);
+        task->controller.service(s->port);
         task->controller.timeout(election_rpc_timeout_);
 
         task->request.set_term(core_map()->cur_term);
@@ -121,8 +137,8 @@ void raft::request_vote(raft_server * s) {
 
     task->s = s;
     task->id = ++request_vote_id_;
-    task->controller.host(s->id);
-    task->controller.service(std::to_string(rpc_port_));
+    task->controller.host(s->address);
+    task->controller.service(s->port);
     task->controller.timeout(election_rpc_timeout_);
 
     task->request.set_term(core_map()->cur_term);
@@ -280,8 +296,8 @@ void raft::append_entries_single(raft_server * s) {
 
     task->s = s;
     task->id = ++append_entries_id_;
-    task->controller.host(s->id);
-    task->controller.service(std::to_string(rpc_port_));
+    task->controller.host(s->address);
+    task->controller.service(s->port);
     task->controller.timeout(heartbeat_rpc_timeout_);
     task->request.set_term(core_map()->cur_term);
     task->request.set_leader_id(self_id_);
@@ -530,6 +546,8 @@ void raft::adjust_commit_idx() {
     /* if there is only one server in the cluster, set commit idx to last log entry's index*/
     if (servers_.size() == 1 && servers_.find(self_id_) != servers_.end()){
         commit_idx_ = log_->last_entry_idx();
+        if (old_commit < commit_idx_)
+            commit_queue_.push(false);
     }
 
 
@@ -573,7 +591,18 @@ std::string raft::serialize_configuration() {
     return res;
 }
 
-raft_server_sptr raft::make_raft_server(std::string address) {
+void raft::make_server_id(std::string & address) {
+    std::vector<std::string> v = split(address, ":");
+
+    if (v.size() == 1) {
+        if (address == interface_address_)
+            address += ":" + rpc_port_;
+        else
+            address += ":" + std::string(RAFTCORE_DEFAULT_RPC_PORT);
+    }
+}
+
+raft_server_sptr raft::make_raft_server(const std::string & address, const std::string & default_port) {
     raft_server_sptr server = raft_server_sptr(new raft_server);
         
     if (server.get() == nullptr) {
@@ -581,8 +610,20 @@ raft_server_sptr raft::make_raft_server(std::string address) {
         return raft_server_sptr(nullptr);
     }
 
-    ::strncpy(server->id, address.c_str(), sizeof(server->id));
-    
+    std::vector<std::string> v = split(address, ":");
+
+    if (v.size() == 1){
+        server->address = address;
+        LOG_INFO << "make_raft_server: missing rpc port for server " << address 
+                 << ", " << default_port << " is used as default";
+        server->port = default_port;
+    } else {
+        server->address = v[0];
+        server->port = v[1];
+    }
+
+    ::strncpy(server->id, (server->address + ":" + server->port).c_str(), sizeof(server->id));
+
     server->alive = false;
 
     server->next_idx = log_->last_entry_idx() + 1;
@@ -679,6 +720,7 @@ void raft::handle_catch_up_server_append_entries() {
 
 }
 rc_errno raft::add_server(std::string address, http::server::reply& rep) {
+    make_server_id(address);
     if (cur_role_ != LEADER) {
         LOG_INFO << "add_new_server: current role is not leader, ignoring...";
         rep.content.append("NOT_LEADER " + cur_leader_);
@@ -698,7 +740,7 @@ rc_errno raft::add_server(std::string address, http::server::reply& rep) {
         return RC_ERROR;
     }
 
-    raft_server_sptr s = make_raft_server(address);
+    raft_server_sptr s = make_raft_server(address, RAFTCORE_DEFAULT_RPC_PORT);
 
     if (s.get() == nullptr) {
         LOG_FATAL << "failed to allocate space for server " << address << ", out of memory";
@@ -724,7 +766,7 @@ rc_errno raft::add_server(std::string address, http::server::reply& rep) {
 
 rc_errno raft::remove_server(std::string address, http::server::reply& rep) {
     rc_errno rc;
-
+    make_server_id(address);
     if (cur_role_ != LEADER) {
         LOG_INFO << "remove_server: current role is not leader, ignoring...";
         rep.content.append("NOT_LEADER " + cur_leader_);
@@ -738,7 +780,6 @@ rc_errno raft::remove_server(std::string address, http::server::reply& rep) {
                  << " is in progress...";
         rep.content.append("LIMIT " + cur_leader_);
         return RC_ERROR;
-
     }
 
     raft_server_sptr s = servers_.find(address)->second;
@@ -806,8 +847,8 @@ void raft::timeout_now(raft_server * s) {
 
     task->s = s;
     task->id = ++timeout_now_id_;
-    task->controller.host(s->id);
-    task->controller.service(std::to_string(rpc_port_));
+    task->controller.host(s->address);
+    task->controller.service(s->port);
     task->controller.timeout(election_rpc_timeout_);
 
     task->request.set_term(core_map()->cur_term);
@@ -850,6 +891,7 @@ void raft::handle_leader_transfer_timeout(raft_server * s, const boost::system::
 }
 
 rc_errno raft::leadership_transfer(std::string address) {
+    make_server_id(address);
     if (cur_role_ != LEADER) {
         LOG_INFO << "leadership_transfer: current role is not leader, ignoring...";
         return RC_ERROR;
@@ -894,7 +936,7 @@ void raft::adjust_configuration() {
     /* server_addition */
     for (auto address : addresses) {
         if (servers_.find(address) == servers_.end()) {
-            raft_server_sptr s = make_raft_server(address);
+            raft_server_sptr s = make_raft_server(address, RAFTCORE_DEFAULT_RPC_PORT);
             if (s.get() == nullptr)
                 throw std::bad_alloc();
             servers_.insert(std::make_pair(address, s));
@@ -917,7 +959,7 @@ void raft::adjust_configuration() {
 void raft::commit_callback_thread() {
     bool get_out = false;
     while ((get_out = commit_queue_.pop()) == false) {
-        for (; last_applied_ <= commit_idx_;) {
+        for (; last_applied_ < commit_idx_;) {
             log_entry* entry = (*log_)[++last_applied_];
 
             /* skip configuration entry */
@@ -933,6 +975,9 @@ void raft::handle_stat(const http::server::request& req, http::server::reply& re
     high_resolution_clock::time_point now = high_resolution_clock::now();
     uint64_t secs = duration_cast<seconds>(now - started_at_).count();
 
+    std::vector<std::string> v = split(cur_leader_, ":");
+    std::string adderss = v[0];
+
     rep.status = http::server::reply::ok;
     rep.content.append("<html><head><title>raftcore@" + self_id_ + "</title></head>");
     // style for table
@@ -942,7 +987,7 @@ th{font-weight:bold;background:#ccc;}</style>");
 
     rep.content.append("<body><div><h2>Hello, this is raftcore.</h2>");
     rep.content.append(std::string("<h3>server ip: ") + self_id_ + "</h3>");
-    rep.content.append(std::string("<h3>rpc port: ") + std::to_string(rpc_port_) + "</h3>");
+    rep.content.append(std::string("<h3>rpc port: ") + rpc_port_ + "</h3>");
     rep.content.append(std::string("<h3>uptime: ") + 
                        std::to_string(secs / 86400) + "d " +
                        std::to_string((secs / 3600) % 24) + "h " +
@@ -954,13 +999,13 @@ th{font-weight:bold;background:#ccc;}</style>");
     rep.content.append(std::string("<h3>commit index: ") + std::to_string(commit_idx_) + "</h2>");
     rep.content.append(std::string("<h3>currnet term: ") + std::to_string(core_map()->cur_term) + "</h2>");
     rep.content.append(std::string("<h3>servers: ") + serialize_configuration() + "</h3>");
-    rep.content.append(std::string("<h3>current leader: <a target='_blank' href='http://" + cur_leader_+ ":" + http_server_port_ + "'>" + cur_leader_ + "</a></h3></div>"));
+    rep.content.append(std::string("<h3>current leader: <a target='_blank' href='http://" + adderss+ ":" + http_server_port_ + "'>" + cur_leader_ + "</a></h3></div>"));
 
     if (cur_role_ == LEADER) {
         for (auto it : servers_) {
             if (it.second->id == self_id_)
                 continue;
-            rep.content.append("<div style='float: left;'><a href='/leader_transfer?server=" + std::string(it.second->id) + "'>transfer leadership</a></br><iframe style='margin:10px;' height='100%' width=500 frameborder=1 src='http://" + std::string(it.second->id) + ":" + http_server_port_ + "/'></iframe></div>");
+            rep.content.append("<div style='float: left;'><a href='/leader_transfer?server=" + std::string(it.second->id) + "'>transfer leadership</a></br><iframe style='margin:10px;' height='100%' width=500 frameborder=1 src='http://" + std::string(it.second->address) + ":" + http_server_port_ + "/'></iframe></div>");
         }
     }
 
@@ -1013,20 +1058,22 @@ void raft::handle_append_log_entry(const http::server::request& req, http::serve
     }
     rep.content.append("<html>");
     
+    std::vector<std::string> v = split(self_id_, ":");
+    std::string address = v[0];
     if (cur_role_ != LEADER) {
         LOG_DEBUG << "append_log_entry: currnt role is not leader";
-        rep.content.append("<head><script type='text/javascript'>alert('not leader!');window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
+        rep.content.append("<head><script type='text/javascript'>alert('not leader!');window.location='http://" + address + ":" + http_server_port_ + "/';</script></head>");
     } else {
         size_t question_mark_pos = req.uri.find_last_of('?');
         if (question_mark_pos == std::string::npos) {
             LOG_DEBUG << "append_log_entry: parameter \'content\' is empty or not found";
-            rep.content.append("<head><script type='text/javascript'>alert('\'content\' not found in the parameter!');window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
+            rep.content.append("<head><script type='text/javascript'>alert('\'content\' not found in the parameter!');window.location='http://" + address + ":" + http_server_port_ + "/';</script></head>");
         } else {
             std::string params = std::string(req.uri.begin() + question_mark_pos + 1, req.uri.end());
             std::string content = find_reuqest_param(params, "content");
             if (content == "") {
                 LOG_DEBUG << "append_log_entry: parameter \'content\' is empty or not found";
-                rep.content.append("<head><script type='text/javascript'>alert('\'content\' is empty or not found in the parameter!');window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
+                rep.content.append("<head><script type='text/javascript'>alert('\'content\' is empty or not found in the parameter!');window.location='http://" + address + ":" + http_server_port_ + "/';</script></head>");
             } else {
                 log_entry_sptr new_entry = make_log_entry(content.size());
                 new_entry->idx = log_->last_entry_idx() + 1;
@@ -1035,7 +1082,7 @@ void raft::handle_append_log_entry(const http::server::request& req, http::serve
                 log_->copy_log_data(new_entry.get(), content);
                 log_->append(new_entry, true);
                 LOG_DEBUG << "append_log_entry: log entry[" << content << "] appended";
-                rep.content.append("<head><script type='text/javascript'>window.location='http://" + self_id_ + ":" + http_server_port_ + "/';</script></head>");
+                rep.content.append("<head><script type='text/javascript'>window.location='http://" + address + ":" + http_server_port_ + "/';</script></head>");
             }
         }
     }
@@ -1185,6 +1232,8 @@ rc_errno raft::bootstrap_cluster_config() {
             return RC_CONF_ERROR;
         }
 
+        make_server_id(address);
+
         if (self_id_ != address) {
             LOG_FATAL << "conf: when bootstrapping, first entry in servers line must be the same as network interface address[" << self_id_ << "]";
             return RC_CONF_ERROR;
@@ -1192,7 +1241,7 @@ rc_errno raft::bootstrap_cluster_config() {
 
         LOG_INFO << "bootstrap_cluster_config: take " << address
                  << " as the first server in the cluster.";
-        raft_server_sptr server = make_raft_server(address);
+        raft_server_sptr server = make_raft_server(address, rpc_port_);
         
         if (server.get() == nullptr) {
             LOG_FATAL << "bootstrap_cluster_config: failed to allocate space for server " << address
@@ -1305,14 +1354,14 @@ rc_errno raft::init() {
         LOG_FATAL << "rpc_port out of range[1024-65535]";
         return RC_CONF_ERROR;
     } else {
-        rpc_port_ = std::stoi(*rpc_port);
+        rpc_port_ = *rpc_port;
     }
 
     /* setup rpc server */
     if (rpc_bind_ip_.empty())
-        rpc_server_ = async_rpc_server_uptr(new carrot::CarrotAsyncServer(ios_, rpc_port_));
+        rpc_server_ = async_rpc_server_uptr(new carrot::CarrotAsyncServer(ios_, std::stoi(rpc_port_)));
     else
-        rpc_server_ = async_rpc_server_uptr(new carrot::CarrotAsyncServer(ios_, rpc_bind_ip_, rpc_port_));
+        rpc_server_ = async_rpc_server_uptr(new carrot::CarrotAsyncServer(ios_, rpc_bind_ip_, std::stoi(rpc_port_)));
 
     if (rpc_server_.get() == nullptr){
         LOG_FATAL << "couldn't allocate memory for rpc_server_, out of memory.";
@@ -1339,9 +1388,9 @@ rc_errno raft::init() {
 
     if (interface == nullptr) {
         LOG_INFO << "missing interface, eth0 is used as default.";
-        self_id_ = get_if_ipv4_address("eth0");
+        self_id_ = interface_address_ = get_if_ipv4_address("eth0");
     } else {
-        self_id_ = get_if_ipv4_address(*interface);
+        self_id_ = interface_address_ = get_if_ipv4_address(*interface);
     }
 
     if (self_id_ == "" || !is_valid_ipv4_address(self_id_)) {
@@ -1349,7 +1398,10 @@ rc_errno raft::init() {
                   << "] of interface " << interface ? *interface : "eth0";
         return RC_CONF_ERROR;
     }
-    LOG_INFO << "interface " << (interface ? *interface : "eth0") << "'s address: " << self_id_;
+    
+    make_server_id(self_id_);
+
+    LOG_INFO << "interface " << (interface ? *interface : "eth0") << "'s address: " << interface_address_;
     /* end of interface */
 
     /* min_election_timeout */
@@ -1442,7 +1494,7 @@ rc_errno raft::init() {
 
         for (auto address : addresses) {
             if (servers_.find(address) == servers_.end()) {
-                raft_server_sptr s = make_raft_server(address);
+                raft_server_sptr s = make_raft_server(address, address == self_id_ ? rpc_port_ : RAFTCORE_DEFAULT_RPC_PORT);
 
                 if (s.get() == nullptr){
                     LOG_FATAL << "failed to allocate space for server " << address << ", out of memory";
@@ -1514,6 +1566,7 @@ rc_errno raft::start() {
         reset_election_timer();
     }
 
+    commit_thread_ = std::thread(&raft::commit_callback_thread, this);
     started_ = true;
 
     ios_.reset();
@@ -1534,11 +1587,12 @@ rc_errno raft::start() {
 rc_errno raft::stop() {
     if (started_) {
         started_ = false;
+        commit_queue_.push(true);
         work_.reset();
         http_server_->stop();
         ios_.stop();
+        commit_thread_.join();
     }
-    
     return RC_GOOD;
 }
 
