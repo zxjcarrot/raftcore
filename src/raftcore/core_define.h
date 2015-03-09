@@ -9,9 +9,12 @@
 #include <cstddef>
 #include <cerrno>
 #include <string>
+#include <cassert>
 
 #include <unistd.h>
 #include <netinet/in.h>
+
+#define RATCORE_PAGESIZE 4096
 
 enum rc_errno{
     RC_NOT_LEADER = -11,

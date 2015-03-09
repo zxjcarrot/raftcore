@@ -34,7 +34,8 @@ rc_errno core_filemap::map() {
                     LOG_ERROR << "failed to create file " << filename_ << "\"" << glogger::strerror_s(errno);
                     return RC_MMAP_INVALID_FILE;
                 }
-
+                /* align at page size */
+                size_ = (size_ + RATCORE_PAGESIZE - 1) & ~(RATCORE_PAGESIZE - 1);
                 ftruncate(fd_, size_);
                 just_created = true;
             }
@@ -63,9 +64,14 @@ rc_errno core_filemap::map() {
 
         size_ = st.st_size;
 
+        /* align at page size */
+        size_ = (size_ + RATCORE_PAGESIZE - 1) & ~(RATCORE_PAGESIZE - 1);
+        
         /* at least one byte of file contents needed to be mapped to memory */
         if (size_ == 0) {
             size_ = if_empty_size_;
+            /* align at page size */
+            size_ = (size_ + RATCORE_PAGESIZE - 1) & ~(RATCORE_PAGESIZE - 1);
             ftruncate(fd_, size_);
         }
     }
@@ -91,7 +97,7 @@ rc_errno core_filemap::map() {
 rc_errno core_filemap::unmap() {
     if (!mapped_)
         return RC_GOOD;
-
+    LOG_INFO << "unmmapping : " << addr_ << " , " << size_;
     if(::munmap(addr_, size_) == -1) {
         LOG_ERROR << "failed to munmap() " << glogger::strerror_s(errno);
         return RC_MMAP_ERROR;
@@ -105,6 +111,9 @@ rc_errno core_filemap::unmap() {
 rc_errno core_filemap::remap(size_t new_size) {
     void* new_addr;
 
+    /* align at page size */
+    new_size = (new_size + RATCORE_PAGESIZE - 1) & ~(RATCORE_PAGESIZE - 1);
+
     if (!mapped_) {
         LOG_ERROR << "the file is not yet mapped";
         return RC_MMAP_NOT_MAPPED;
@@ -117,11 +126,6 @@ rc_errno core_filemap::remap(size_t new_size) {
             LOG_ERROR << "failed to mremap() " << glogger::strerror_s(errno);
             return RC_MMAP_ERROR;
         }
-
-        addr_ = new_addr;
-        size_ = new_size;
-
-        return RC_GOOD;
     #else
         rc_errno r = unmap();
 
@@ -129,12 +133,13 @@ rc_errno core_filemap::remap(size_t new_size) {
         
         if (r != RC_GOOD)
             return r;
-
+        LOG_INFO << "ftruncate : " << fd_ << " , " << new_size;
         if (::ftruncate(fd_, new_size) == -1) {
             LOG_ERROR << "failed to ftruncate() " << glogger::strerror_s(errno);
             return RC_MMAP_ERROR;
         }
 
+        LOG_INFO << "mmap : " << new_size << ", " << off_;
         new_addr = ::mmap(hint_, new_size, prot_, flags_, fd_, off_);
 
         if (new_addr == MAP_FAILED) {
@@ -166,7 +171,7 @@ rc_errno core_filemap::sync_range(void* addr, size_t len) {
     }
     uint64_t left = (uint64_t)addr & (RATCORE_PAGESIZE - 1);
     void * aligned_addr = reinterpret_cast<void*>((uint64_t)addr - left);
-    /* msync requires @addr is multiple of hardware page size */
+    /* msync requires @addr must be a multiple of hardware page size */
     if (::msync(aligned_addr, len + left, MS_SYNC) == -1){
         LOG_ERROR << "failed to msync() " << glogger::strerror_s(errno);
         return RC_MMAP_ERROR;

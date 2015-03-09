@@ -20,14 +20,15 @@ namespace raftcore {
 /* 0 len for a log_entry indicates the end of the log file */
 const uint64_t log_end_marker = 0;
 
-#define LOG_ENTRY_DATA_LEN(l) ((l)->len - sizeof(struct raftcore::log_entry))
+#define LOG_ENTRY_DATA_LEN(l) ((l)->data_len)
 
 
 struct log_entry {
-    uint64_t     len;       /* length of this entry including @len */
+    uint64_t     len;       /* length of this entry including @len and padding */
     uint64_t     idx;       /* index of this entry */
     uint64_t     term;      /* term to which this entry belongs */
     bool         cfg;       /* if this is a configuration entry */
+    uint64_t     data_len;  /* length of @data */
     /* 
     * if this is a configuration entry, then the first eight bytes
     * of @data stores the index of the previous configuration entry,
@@ -37,12 +38,17 @@ struct log_entry {
     char         data[];
 };
 
+
+#define LOG_ENTRY_DATA(e)\
+    ((e)->cfg ? std::string((e)->data + sizeof(uint64_t), LOG_ENTRY_DATA_LEN(e) - sizeof(uint64_t)) : std::string((e)->data, LOG_ENTRY_DATA_LEN(e)))
+
 #define LOG_ENTRY_TO_STRING(e)\
-    ("[len: " + std::to_string(e->len) + ", idx: " + std::to_string(e->idx) +\
-   ", term: " + std::to_string(e->term) + ", cfg: " + std::to_string(e->cfg) +\
-   ", data: '" + std::string(e->data, LOG_ENTRY_DATA_LEN(e)) + "']")
+    ("[len: " + std::to_string((e)->len) + ", idx: " + std::to_string((e)->idx) +\
+   ", term: " + std::to_string((e)->term) + ", cfg: " + std::to_string((e)->cfg) +\
+   ", data: '" + LOG_ENTRY_DATA(e) + "']")
 
 #define LOG_ENTRY_SENTINEL log_entry{sizeof(struct log_entry), 0, 0, 0}
+#define LOG_ENTRY_ALIGNMENT 8
 
 typedef std::shared_ptr<log_entry> log_entry_sptr;
 
@@ -72,6 +78,9 @@ public:
     /* read entries from log file, do proper initializations. */
     rc_errno init();
 
+    /* dumps whole log to a string for debugging */
+    std::string debug_log_string();
+
     /*
     * append entries to the log.
     */
@@ -83,6 +92,7 @@ public:
     */
     rc_errno chop(uint64_t idx, bool sync = false);
 
+    uint64_t payload() { return payload_size_; }
     uint64_t size() { return size_; }
 
     /* return # of entries in the log.*/
@@ -156,7 +166,6 @@ private:
     /* current configuration entry index, 0 if the log is bootstrapping */
     uint64_t                    cfg_entry_idx_;
 };
-#define RAFTCORE_LOG_AVAIL_SIZE (size_ - sizeof(log_end_marker) - payload_size_)
 
 }
 #endif

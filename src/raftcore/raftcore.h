@@ -252,6 +252,7 @@ public:
 
     raft_role current_role() { return cur_role_; }
     std::string current_leader() { return cur_leader_; }
+    uint64_t  log_size() { return log_->payload(); }
 private:
     raft();
     /*

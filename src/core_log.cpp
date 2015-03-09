@@ -12,8 +12,12 @@
 namespace raftcore {
 
 log_entry_sptr make_log_entry(uint64_t data_len, bool is_config) {
-    log_entry_sptr les = log_entry_sptr(static_cast<log_entry*>((void*)(new char[(is_config ? sizeof(uint64_t) : 0) + data_len + sizeof(log_entry)])));
-    les->len = (is_config ? sizeof(uint64_t) : 0) + data_len + sizeof(log_entry);
+    uint64_t total_len = sizeof(log_entry) + (is_config ? sizeof(uint64_t) : 0) + data_len;
+    total_len = (total_len + LOG_ENTRY_ALIGNMENT - 1) & ~(LOG_ENTRY_ALIGNMENT - 1);
+    log_entry_sptr les = log_entry_sptr(static_cast<log_entry*>((void*)(new char[total_len])));
+    ::memset(les.get(), 0, total_len);
+    les->len = total_len;
+    les->data_len = data_len + (is_config ? sizeof(uint64_t) : 0);
     return les;
 }
 
@@ -107,11 +111,32 @@ rc_errno core_logger::init() {
     }
 
     size_ = log_map_.size();
+    LOG_INFO << "raftcore log size: " << log_map_.size();
     payload_size_ = payload_size;
 
     log_map_.advise(MADV_NORMAL);
 
     return RC_GOOD;
+}
+
+std::string core_logger::debug_log_string() {
+    std::string s;
+    log_entry* pl = static_cast<log_entry*>(log_map_.addr());
+
+    // advise the OS that we will be accessing the memory region in a sequential manner.
+    log_map_.advise(MADV_SEQUENTIAL);
+
+    /*
+    * calculate prefix sum of length of log entries.
+    */
+    while (pl->len != log_end_marker) {
+        s.append(LOG_ENTRY_DATA(pl) + "\n");
+        pl = static_cast<log_entry*>((void*)((char*)pl + pl->len));
+    }
+
+    log_map_.advise(MADV_NORMAL);
+
+    return s;
 }
 
 log_entry* core_logger::operator[] (uint64_t i) {
@@ -171,10 +196,15 @@ rc_errno core_logger::append(const std::vector<log_entry_sptr> & entries, bool s
     }
 
     /* expand log file if necessary */
-    while (s > RAFTCORE_LOG_AVAIL_SIZE) {
+    while (size_ - payload_size_ - sizeof(log_end_marker) <= s) {
         if ((res = grow_log()) != RC_GOOD)
-            return res;
+            return res;        
     }
+
+    LOG_INFO << "appending log entires total size: " << s 
+             << ", available size: " << size_ - payload_size_ - sizeof(log_end_marker)
+             << ", payload_size_:" << payload_size_
+             << ", metas_.back().prefix_sum: " << metas_.back().prefix_sum;
 
     uint64_t   pos = metas_.back().prefix_sum;
     log_entry* pre = static_cast<log_entry*>((void*)((char*)log_map_.addr() + pos));
@@ -189,21 +219,23 @@ rc_errno core_logger::append(const std::vector<log_entry_sptr> & entries, bool s
         next = static_cast<log_entry*>((void*)((char *)pre + pre->len));
         
         ::memcpy((char*)next, (char*)les.get(), les->len);
-
         metas_.push_back({les->idx, pos});
         pre = next;
     }
 
-    /* put the end marker right after last entry */
+    /* put end marker right after the last entry */
     next = static_cast<log_entry*>((void*)((char*)log_map_.addr() + metas_.back().prefix_sum));
     next = static_cast<log_entry*>((void*)((char*)next + next->len));
     next->len = log_end_marker;
 
-    payload_size_ = metas_.back().prefix_sum;
+    payload_size_ += s;
+
     /* flush entries to disk */
     if (sync) {
         return log_map_.sync_range((char *)next - s, s + sizeof(log_end_marker));
     }
+
+
 
     return RC_GOOD;
 }
@@ -236,13 +268,12 @@ rc_errno core_logger::chop(uint64_t idx, bool sync) {
 }
 
 rc_errno core_logger::grow_log() {
-    uint64_t new_size = size_ * growing_factor_;
-    rc_errno res = log_map_.remap(new_size);
+    rc_errno res = log_map_.remap(size_ * growing_factor_);
 
     if (res != RC_GOOD)
         return res;
 
-    size_ = new_size;
+    size_ = log_map_.size();
 
     return res;
 }

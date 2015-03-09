@@ -29,8 +29,11 @@ uint64_t raft::append_log_entry(const std::string & data) {
     new_entry->cfg = false;
     log_->copy_log_data(new_entry.get(), data);
 
+    LOG_INFO << "appending entry: " << LOG_ENTRY_TO_STRING(new_entry);
+
     if(log_->append(new_entry, true) != RC_GOOD)
         return 0;
+
     return new_entry->idx;
 }
 
@@ -323,7 +326,7 @@ void raft::append_entries_single(raft_server * s) {
         log_entry * l = (*log_)[i];
         e->set_term(l->term);
         e->set_idx(l->idx);
-        e->set_data(std::move(std::string(l->data, LOG_ENTRY_DATA_LEN(l))));
+        e->set_data(std::move(LOG_ENTRY_DATA(l)));
         e->set_config(l->cfg);
     }
     task->time_start = high_resolution_clock::now();
@@ -588,6 +591,8 @@ std::string raft::serialize_configuration() {
         res.erase(res.begin() + pos);
     }
     
+    LOG_INFO << "serialized config: " << res;
+
     return res;
 }
 
@@ -1020,7 +1025,7 @@ th{font-weight:bold;background:#ccc;}</style>");
         }
         rep.content.append("<td>" + std::to_string(entry->idx) + "</td>");
         rep.content.append("<td>" + std::to_string(entry->term) + "</td>");
-        rep.content.append("<td>" + std::string(entry->data, LOG_ENTRY_DATA_LEN(entry)) + "</td>");
+        rep.content.append("<td>" + LOG_ENTRY_DATA(entry) + "</td>");
         rep.content.append("</tr>");
     }
     rep.content.append("</table>");
@@ -1797,7 +1802,7 @@ void core_service_impl::append_entries(::google::protobuf::RpcController* ctl,
             for (; i < req->entries_size(); ++i) {
                 const LogEntry & e = req->entries(i);
                 need_adjust_cfg = need_adjust_cfg || e.config();
-                log_entry_sptr entry = log_entry_sptr(make_log_entry(e.data().size()));
+                log_entry_sptr entry = log_entry_sptr(make_log_entry(e.data().size(), e.config()));
                 
                 if (entry.get() == nullptr) {
                     LOG_ERROR << "append_entries: failed to allocate memory for incoming log_entry, out of memory.";
@@ -1808,7 +1813,7 @@ void core_service_impl::append_entries(::google::protobuf::RpcController* ctl,
                 entry->idx = e.idx();
                 entry->term = e.term();
                 entry->cfg = e.config(); 
-                raft_->log_->copy_log_data(entry.get(), e.data());
+                raft_->log_->copy_log_data(entry.get(), e.data(), e.config());
 
                 v.push_back(entry);
 

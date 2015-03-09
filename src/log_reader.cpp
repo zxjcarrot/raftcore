@@ -21,14 +21,14 @@ int main(int argc, char const *argv[]) {
     std::string command;
     while(std::cin >> command) {
         if (command == "show") {
-            std::cout << std::setw(19) << "DataLen" << std::setw(19) << "Index" << std::setw(19) << "Term" << std::setw(7) << "config" << "\tData" << std::endl;
+            std::cout << std::setw(19) << "DataLen" << std::setw(19) << "Index" << std::setw(19) << "Term" << std::setw(7) << "Config" << "\tData" << std::endl;
             for (uint64_t i = logger->first_entry_idx(); i <= logger->last_entry_idx(); ++i) {
                 log_entry * e = (*logger)[i];
                 std::cout << std::setw(19) << LOG_ENTRY_DATA_LEN(e)
                 << std::setw(19) << e->idx
                 << std::setw(19) << e->term << "\t"
-                << std::setw(7) << e->cfg
-                << std::string(e->data, LOG_ENTRY_DATA_LEN(e)) 
+                << std::setw(7) << e->cfg << "\t"
+                << "'" + LOG_ENTRY_DATA(e) + "'" 
                 << std::endl;;
             }
         } else if (command == "append") {
