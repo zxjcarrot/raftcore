@@ -1,5 +1,5 @@
 ## Overview
-a library implements raft consensus protocol core functionalities, intended to be used as a building block for distributed systems.
+A library implements raft consensus protocol core functionalities, intended to be used as a building block for distributed systems.
 ### Features supported
 Leader election.  
 Log replication.  
