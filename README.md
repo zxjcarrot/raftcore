@@ -1,21 +1,21 @@
-##Overview
+## Overview
 a library implements raft consensus protocol core functionalities, intended to be used as a building block for distributed systems.
-###Features supported
+### Features supported
 Leader election.  
 Log replication.  
 Leadership transfer.   
 Membership changes.   
-###Features in development
+### Features in development
 Log compaction.  
-###Prerequsites
+### Prerequsites
 [protobuf 2.6.0](https://developers.google.com/protocol-buffers/)  
 [boost.asio boost.log](http://www.boost.org/users/history/version_1_57_0.html)  
 [carrot-rpc](https://github.com/zxjcarrot/carrot-rpc)  
-##Installation
+## Installation
     git clone https://github.com/zxjcarrot/raftcore
     cd raftcore/src
     make
-###Configuration
+### Configuration
 see [exemplary conf file](https://github.com/zxjcarrot/raftcore/blob/master/src/raft.conf) for reference.
 ####Bootstrap the cluster
 Say we have a cluster of 3 servers(A 192.168.1.1, B 192.168.1.2, C 192.168.1.3), in order to bootstrap the cluster, we have to choose one of the three servers as the initiating server, say server A.
@@ -32,7 +32,7 @@ Then use the script **reconfigure.py** to add the two servers to the cluster.
     ```./reconfigure.py --leader_address=192.168.1.1 --add_servers=192.168.1.2,192.168.1.3```  
 This completes the startup of the cluster.  
 
-###Cluster reconfiguration
+### Cluster reconfiguration
 If we want to remove one of the server out of the cluster, say server B, run following:  
     ```./reconfigure.py --leader_address=192.168.1.1 --del_servers=192.168.1.2```  
 This will remove the server B out of the cluster safely.  
@@ -41,5 +41,5 @@ If for some reason, we want to transfer the leadership to other server in the cl
     ```./reconfigure.py --leader_address=192.168.1.1 --target_server=192.168.1.2```  
 This will make leader A transfer its leadership to server B stably, A will become a follower once the transfer is complete.  
 
-##Examples  
+## Examples  
 A trivial key-value replicated store can be easily implemented on top of **raftcore**, see [carrot-kv](https://github.com/zxjcarrot/raftcore/tree/master/examples/carrot-kv).
